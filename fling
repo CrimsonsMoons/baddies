@@ -1,4 +1,4 @@
--- TRUE ROCKET FLING (Lock → Orbit)
+--- TRUE ROCKET FLING (Lock → Orbit)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
