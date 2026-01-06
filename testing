@@ -1,0 +1,231 @@
+--====================================================
+-- SERVICES
+--====================================================
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local Remote = RS:WaitForChild("Event", 9e9)
+
+--====================================================
+-- SETTINGS
+--====================================================
+local FOLLOW_DISTANCE = 2
+local FOLLOW_THRESHOLD = 1
+local HIT_DELAY = 0.1
+local STOMP_DELAY = 0.05
+local STOMP_REPEAT = 5
+local STOMP_HP = 1
+
+--====================================================
+-- STATE
+--====================================================
+local enabled = false
+local mode = "All" -- All | Nearest | PlayerName
+local kills = 0
+local currentTarget = nil
+
+--====================================================
+-- UTILS
+--====================================================
+local function getHRP(char)
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum(char)
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function alive(plr)
+	if not plr or not plr:IsDescendantOf(game) then return false end
+	if not plr.Character then return false end
+	local hum = getHum(plr.Character)
+	local hrp = getHRP(plr.Character)
+	return hum and hrp and hum.Health > 0
+end
+
+--====================================================
+-- SMART TELEPORT FOLLOW (CORE IMPROVEMENT)
+--====================================================
+local function smartFollow(myHRP, targetHRP)
+	myHRP.AssemblyLinearVelocity = Vector3.zero
+	myHRP.AssemblyAngularVelocity = Vector3.zero
+
+	local behindPos =
+		targetHRP.Position - targetHRP.CFrame.LookVector * FOLLOW_DISTANCE
+
+	if (myHRP.Position - behindPos).Magnitude > FOLLOW_THRESHOLD then
+		myHRP.CFrame = CFrame.new(behindPos, targetHRP.Position)
+	end
+end
+
+--====================================================
+-- REMOTES
+--====================================================
+local function hit(part)
+	Remote:FireServer({
+		Event = "Hit",
+		ClientHitbox = { part }
+	})
+end
+
+local function stomp()
+	Remote:FireServer({ Event = "Stomp" })
+end
+
+--====================================================
+-- GUI
+--====================================================
+local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+gui.Name = "SmartBotGUI"
+gui.ResetOnSpawn = false
+
+local function makeLabel(text, y)
+	local l = Instance.new("TextLabel", gui)
+	l.Size = UDim2.new(0, 260, 0, 28)
+	l.Position = UDim2.new(0, 20, 0, y)
+	l.BackgroundTransparency = 1
+	l.TextColor3 = Color3.fromRGB(255,255,255)
+	l.Font = Enum.Font.SourceSansBold
+	l.TextScaled = true
+	l.Text = text
+	return l
+end
+
+local toggleBtn = Instance.new("TextButton", gui)
+toggleBtn.Size = UDim2.new(0, 140, 0, 36)
+toggleBtn.Position = UDim2.new(0, 20, 0, 80)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(35,35,35)
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextScaled = true
+toggleBtn.Text = "AUTO: OFF"
+
+local targetBtn = Instance.new("TextButton", gui)
+targetBtn.Size = UDim2.new(0, 180, 0, 30)
+targetBtn.Position = UDim2.new(0, 20, 0, 120)
+targetBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+targetBtn.TextColor3 = Color3.fromRGB(255,255,255)
+targetBtn.Font = Enum.Font.SourceSans
+targetBtn.TextScaled = true
+targetBtn.Text = "Target: All"
+
+local statusLabel = makeLabel("Status: Idle", 160)
+local killLabel = makeLabel("Kills: 0", 190)
+
+local function updateGUI()
+	toggleBtn.Text = enabled and "AUTO: ON" or "AUTO: OFF"
+	toggleBtn.BackgroundColor3 = enabled and Color3.fromRGB(0,140,0) or Color3.fromRGB(35,35,35)
+	targetBtn.Text = "Target: " .. mode
+	killLabel.Text = "Kills: " .. kills
+end
+
+toggleBtn.MouseButton1Click:Connect(function()
+	enabled = not enabled
+	updateGUI()
+end)
+
+UIS.InputBegan:Connect(function(i,gp)
+	if gp then return end
+	if i.KeyCode == Enum.KeyCode.K then
+		enabled = not enabled
+		updateGUI()
+	end
+end)
+
+targetBtn.MouseButton1Click:Connect(function()
+	local options = { "All", "Nearest" }
+	for _,p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer then table.insert(options, p.Name) end
+	end
+	local idx = table.find(options, mode) or 1
+	mode = options[(idx % #options) + 1]
+	updateGUI()
+end)
+
+--====================================================
+-- TARGET SELECTION
+--====================================================
+local function getTarget(myHRP)
+	if mode == "Nearest" then
+		local best, dist = nil, math.huge
+		for _,p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer and alive(p) then
+				local hrp = getHRP(p.Character)
+				local d = (hrp.Position - myHRP.Position).Magnitude
+				if d < dist then
+					best, dist = p, d
+				end
+			end
+		end
+		return best
+	elseif mode ~= "All" then
+		local p = Players:FindFirstChild(mode)
+		if p and alive(p) then return p end
+	end
+	for _,p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and alive(p) then
+			return p
+		end
+	end
+end
+
+--====================================================
+-- MAIN LOOP (NEVER STOPS)
+--====================================================
+task.spawn(function()
+	while true do
+		RunService.Heartbeat:Wait()
+		if not enabled then continue end
+
+		local myHRP = getHRP(LocalPlayer.Character)
+		if not myHRP then continue end
+
+		if not currentTarget or not currentTarget:IsDescendantOf(game) then
+			currentTarget = getTarget(myHRP)
+		end
+		if not currentTarget then continue end
+
+		statusLabel.Text = "Status: Targeting " .. currentTarget.Name
+
+		while enabled and currentTarget:IsDescendantOf(game) do
+			local char = currentTarget.Character
+			local hum = getHum(char)
+			local hrp = getHRP(char)
+
+			if not hum or not hrp then
+				task.wait(0.1)
+				continue
+			end
+
+			-- ATTACK PHASE
+			while enabled and hum.Health > STOMP_HP do
+				smartFollow(myHRP, hrp)
+				hit(hrp)
+				task.wait(HIT_DELAY)
+			end
+
+			-- STOMP PHASE
+			while enabled and hum.Health <= STOMP_HP and hum.Health > 0 do
+				myHRP.CFrame = hrp.CFrame
+				for _ = 1, STOMP_REPEAT do
+					stomp()
+					task.wait(STOMP_DELAY)
+				end
+			end
+
+			-- WAIT FOR RESPAWN
+			if hum.Health <= 0 then
+				local oldChar = char
+				repeat task.wait(0.1)
+				until currentTarget.Character ~= oldChar or not currentTarget:IsDescendantOf(game)
+				kills += 1
+				updateGUI()
+			end
+		end
+
+		currentTarget = nil
+	end
+end)
