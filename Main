@@ -3,14 +3,14 @@ local RS = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Remote = RS:WaitForChild("Event", 9e9)
 
--- SETTINGS
+-- Settings
 local HIT_DELAY = 0.1
 local STOMP_DELAY = 0.05
 local STOMP_REPEAT = 5
 local FOLLOW_DISTANCE = 2
 local STOMP_HP = 1
 
---- Utils
+-- Utils
 local function getHum(char)
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
@@ -30,7 +30,7 @@ local function stomp()
 	Remote:FireServer({ Event = "Stomp" })
 end
 
--- MAIN LOOP (never locks up)
+-- MAIN LOOP
 while true do
 	task.wait(0.1)
 
@@ -50,10 +50,9 @@ while true do
 			continue
 		end
 
-		-- 🔴 FOLLOW + HIT
-		while hum.Parent and hum.Health > STOMP_HP do
-			if not hrp.Parent then break end
-
+		-- 🔴 TELEPORT FOLLOW WHILE ATTACKING
+		while hum.Parent and hum.Health > STOMP_HP and plr.Character == enemyChar do
+			-- TP behind enemy every frame
 			myHRP.CFrame = CFrame.new(
 				hrp.Position - hrp.CFrame.LookVector * FOLLOW_DISTANCE,
 				hrp.Position
@@ -63,14 +62,14 @@ while true do
 			task.wait(HIT_DELAY)
 		end
 
-		-- 🦶 STOMP + STAY UNTIL RESPAWN
+		-- 🦶 STOMP + LOCK ON UNTIL RESPAWN
 		if hum.Parent and hum.Health <= STOMP_HP then
-			local oldCharacter = enemyChar
+			local oldChar = enemyChar
 
-			while oldCharacter == plr.Character do
-				local currentHRP = getHRP(plr.Character)
-				if currentHRP then
-					myHRP.CFrame = currentHRP.CFrame
+			while plr.Character == oldChar do
+				local stompHRP = getHRP(plr.Character)
+				if stompHRP then
+					myHRP.CFrame = stompHRP.CFrame
 				end
 
 				for i = 1, STOMP_REPEAT do
@@ -82,7 +81,6 @@ while true do
 			end
 		end
 
-		-- move to next player cleanly
-		task.wait(0.2)
+		task.wait(0.2) -- slight cooldown between targets
 	end
 end
