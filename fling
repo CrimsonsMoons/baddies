@@ -5,7 +5,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
---- === Inlined Targeting Module ===
+-- === Inlined Targeting Module ===
 local function GetValidTarget(player)
 	if not player or not player.Character then return nil end
 	local hrp = player.Character:FindFirstChild("HumanoidRootPart")
@@ -16,24 +16,6 @@ end
 
 local function GetPredictedPosition(hrp, predictionTime)
 	return hrp.Position + (hrp.AssemblyLinearVelocity * predictionTime)
-end
-
-local function GetNearestPlayer(originPlayer)
-	local nearest, shortestDist = nil, math.huge
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= originPlayer then
-			local hrp = GetValidTarget(plr)
-			if hrp then
-				local dist = (originPlayer.Character and originPlayer.Character:FindFirstChild("HumanoidRootPart") or Vector3.zero) - hrp.Position
-				local mag = dist.Magnitude
-				if mag < shortestDist then
-					shortestDist = mag
-					nearest = plr
-				end
-			end
-		end
-	end
-	return nearest
 end
 
 -- === GUI Setup ===
@@ -137,12 +119,7 @@ playerDropdown.MouseButton1Click:Connect(function()
 	dropdownFrame.Visible = not dropdownFrame.Visible
 end)
 
--- Auto Target on Load
 refreshDropdown()
-selectedPlayer = GetNearestPlayer(LocalPlayer)
-if selectedPlayer then
-	playerDropdown.Text = "Target: " .. selectedPlayer.Name
-end
 
 -- === Fling Logic ===
 local flingConn
@@ -150,7 +127,7 @@ local orbitAngle = 0
 
 local function startFling()
 	if not selectedPlayer then
-		statusLabel.Text = "Status: No target"
+		statusLabel.Text = "Status: No target selected"
 		return
 	end
 
@@ -183,7 +160,6 @@ local function startFling()
 	end)
 end
 
--- === Toggle Fling On/Off
 toggleBtn.MouseButton1Click:Connect(function()
 	if flingConn then
 		flingConn:Disconnect()
