@@ -3,21 +3,20 @@ local RS = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Remote = RS:WaitForChild("Event", 9e9)
 
---- SETTINGS
+-- SETTINGS
 local HIT_DELAY = 0.1
 local STOMP_DELAY = 0.05
 local STOMP_REPEAT = 5
-local BEHIND_DISTANCE = 2
+local FOLLOW_DISTANCE = 2
 local STOMP_HP = 1
-local FOLLOW_UPDATE = 0.03
 
 -- Utils
-local function getHRP(char)
-	return char and char:FindFirstChild("HumanoidRootPart")
-end
-
 local function getHum(char)
 	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function getHRP(char)
+	return char and char:FindFirstChild("HumanoidRootPart")
 end
 
 local function hit(part)
@@ -31,53 +30,59 @@ local function stomp()
 	Remote:FireServer({ Event = "Stomp" })
 end
 
--- MAIN LOOP
+-- MAIN LOOP (never locks up)
 while true do
-	task.wait(0.2)
+	task.wait(0.1)
 
 	local myChar = LocalPlayer.Character
 	local myHRP = getHRP(myChar)
 	if not myHRP then continue end
 
 	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer and plr.Character then
-			local char = plr.Character
-			local hum = getHum(char)
-			local hrp = getHRP(char)
+		if plr == LocalPlayer then continue end
 
-			if hum and hrp and hum.Health > 0 then
-				-- 🔴 FOLLOW + HIT LOOP
-				while hum.Parent and hum.Health > STOMP_HP do
-					-- Follow behind target continuously
-					myHRP.CFrame = CFrame.new(
-						hrp.Position - hrp.CFrame.LookVector * BEHIND_DISTANCE,
-						hrp.Position
-					)
+		local enemyChar = plr.Character
+		local hum = getHum(enemyChar)
+		local hrp = getHRP(enemyChar)
 
-					hit(hrp)
-					task.wait(HIT_DELAY)
+		-- skip invalid targets
+		if not hum or not hrp or hum.Health <= 0 then
+			continue
+		end
+
+		-- 🔴 FOLLOW + HIT
+		while hum.Parent and hum.Health > STOMP_HP do
+			if not hrp.Parent then break end
+
+			myHRP.CFrame = CFrame.new(
+				hrp.Position - hrp.CFrame.LookVector * FOLLOW_DISTANCE,
+				hrp.Position
+			)
+
+			hit(hrp)
+			task.wait(HIT_DELAY)
+		end
+
+		-- 🦶 STOMP + STAY UNTIL RESPAWN
+		if hum.Parent and hum.Health <= STOMP_HP then
+			local oldCharacter = enemyChar
+
+			while oldCharacter == plr.Character do
+				local currentHRP = getHRP(plr.Character)
+				if currentHRP then
+					myHRP.CFrame = currentHRP.CFrame
 				end
 
-				-- 🦶 STOMP + STAY ON THEM
-				if hum.Parent and hum.Health <= STOMP_HP then
-					while char.Parent do
-						-- Stay glued to target
-						if hrp then
-							myHRP.CFrame = hrp.CFrame
-						end
-
-						for i = 1, STOMP_REPEAT do
-							stomp()
-							task.wait(STOMP_DELAY)
-						end
-
-						task.wait(FOLLOW_UPDATE)
-					end
+				for i = 1, STOMP_REPEAT do
+					stomp()
+					task.wait(STOMP_DELAY)
 				end
 
-				-- wait a moment before next target
-				task.wait(0.3)
+				task.wait(0.1)
 			end
 		end
+
+		-- move to next player cleanly
+		task.wait(0.2)
 	end
 end
