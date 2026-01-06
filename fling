@@ -1,4 +1,4 @@
--- Super Fling GUI (FULL, FIXED DROPDOWN + ROCKET FLING)
+--- Super Fling GUI (FULL, FIXED DROPDOWN + ROCKET FLING)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
