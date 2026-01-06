@@ -1,4 +1,4 @@
---- SERVICES
+-- SERVICES
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -21,7 +21,7 @@ local followStyle = "Behind"
 local kills = 0
 local currentTarget = nil
 
--- POSITION OFFSETS
+-- POSITION MODES
 local positionOffsets = {
 	["Behind"] = Vector3.new(0, 0, -FOLLOW_DISTANCE),
 	["Front"]  = Vector3.new(0, 0, FOLLOW_DISTANCE),
@@ -69,7 +69,7 @@ local function stomp()
 	Remote:FireServer({ Event = "Stomp" })
 end
 
--- GUI
+-- GUI SETUP
 local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 gui.Name = "SmartBotGUI"
 gui.ResetOnSpawn = false
@@ -129,7 +129,7 @@ toggleBtn.MouseButton1Click:Connect(function()
 	updateGUI()
 end)
 
-UIS.InputBegan:Connect(function(i,gp)
+UIS.InputBegan:Connect(function(i, gp)
 	if gp then return end
 	if i.KeyCode == Enum.KeyCode.K then
 		enabled = not enabled
@@ -139,7 +139,7 @@ end)
 
 targetBtn.MouseButton1Click:Connect(function()
 	local options = { "All", "Nearest" }
-	for _,p in ipairs(Players:GetPlayers()) do
+	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer then table.insert(options, p.Name) end
 	end
 	local idx = table.find(options, mode) or 1
@@ -154,10 +154,11 @@ posBtn.MouseButton1Click:Connect(function()
 	updateGUI()
 end)
 
+-- TARGET SELECT
 local function getTarget(myHRP)
 	if mode == "Nearest" then
 		local best, dist = nil, math.huge
-		for _,p in ipairs(Players:GetPlayers()) do
+		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= LocalPlayer and alive(p) then
 				local hrp = getHRP(p.Character)
 				if hrp then
@@ -173,7 +174,7 @@ local function getTarget(myHRP)
 		local p = Players:FindFirstChild(mode)
 		if p and alive(p) then return p end
 	end
-	for _,p in ipairs(Players:GetPlayers()) do
+	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and alive(p) then
 			return p
 		end
@@ -206,17 +207,22 @@ task.spawn(function()
 				continue
 			end
 
-			-- ATTACK LOOP (Always attack)
-			while enabled and hum.Health > 0 do
+			-- ATTACK until knocked
+			while enabled and hum.Health > 0 and not hum.PlatformStand do
 				smartFollow(myHRP, hrp)
 				hit(hrp)
-
-				-- STOMP IF AT LOW HP
-				if hum.Health <= STOMP_HP then
-					stomp()
-				end
-
 				task.wait(HIT_DELAY)
+			end
+
+			-- ONCE KNOCKED → give time → stomp + attack
+			if enabled and hum.PlatformStand and hum.Health > 0 then
+				task.wait(0.5)
+				for _ = 1, 5 do
+					myHRP.CFrame = hrp.CFrame
+					stomp()
+					hit(hrp)
+					task.wait(STOMP_DELAY)
+				end
 			end
 
 			-- WAIT FOR RESPAWN
