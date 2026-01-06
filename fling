@@ -1,125 +1,104 @@
--- SUPER FLING GUI | WORKING TARGET DROPDOWN + REAL PREDICTION
+-- SUPER FLING (FIXED: NO SELF-DEATH, REAL TARGETING)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 
-local LocalPlayer = Players.LocalPlayer
+local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- ================== CONFIG ==================
-local BASE_PREDICTION = 0.18
-local MAX_PREDICTION = 0.4
-local SNAP_DISTANCE = 45
+-- ================= CONFIG =================
+local ORBIT_RADIUS = 6
+local ORBIT_SPEED = 8
+local CHASE_FORCE = 140
+local PREDICTION = 0.22
+local MAX_DIST = 50
 
--- ================== STATE ==================
-local selectedPlayer = nil
-local selectedUserId = nil
-local flingMode = "Orbit" -- Orbit | Fast | Direct
+-- ================= STATE =================
+local targetPlayer = nil
+local targetUserId = nil
+local flingMode = "Orbit" -- Orbit / Fast / Direct
 local cameraLock = false
-local predictionStrength = BASE_PREDICTION
 
--- ================== GUI ==================
-local gui = Instance.new("ScreenGui", PlayerGui)
+-- ================= CHARACTER SAFETY =================
+local function prepCharacter(char)
+	for _, p in ipairs(char:GetDescendants()) do
+		if p:IsA("BasePart") then
+			p.CanCollide = false
+		end
+	end
+end
+
+-- ================= GUI =================
+local gui = Instance.new("ScreenGui", LP.PlayerGui)
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 280, 0, 440)
+frame.Size = UDim2.new(0, 270, 0, 420)
 frame.Position = UDim2.new(0, 10, 0.35, 0)
 frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
 Instance.new("UICorner", frame)
 
-local function button(text, y)
+local function btn(text, y)
 	local b = Instance.new("TextButton", frame)
 	b.Size = UDim2.new(1,-20,0,26)
 	b.Position = UDim2.new(0,10,0,y)
-	b.BackgroundColor3 = Color3.fromRGB(55,55,55)
-	b.TextColor3 = Color3.new(1,1,1)
+	b.Text = text
 	b.Font = Enum.Font.SourceSans
 	b.TextSize = 14
-	b.Text = text
+	b.TextColor3 = Color3.new(1,1,1)
+	b.BackgroundColor3 = Color3.fromRGB(60,60,60)
 	return b
 end
 
-local toggleBtn = button("Start Fling", 10)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
+local startBtn = btn("Start Fling", 10)
+startBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
 
-local targetBtn = button("Select Target ▼", 45)
+local targetBtn = btn("Select Target ▼", 45)
 
 local dropdown = Instance.new("ScrollingFrame", frame)
 dropdown.Position = UDim2.new(0,10,0,75)
-dropdown.Size = UDim2.new(1,-20,0,130)
+dropdown.Size = UDim2.new(1,-20,0,140)
 dropdown.BackgroundColor3 = Color3.fromRGB(40,40,40)
-dropdown.ScrollBarThickness = 6
 dropdown.Visible = false
-dropdown.CanvasSize = UDim2.new(0,0,0,0)
+dropdown.ScrollBarThickness = 6
 
 local layout = Instance.new("UIListLayout", dropdown)
-layout.Padding = UDim.new(0,4)
 
-local modeBtn = button("Mode: Orbit", 215)
-local predBtn = button("Prediction: 0.18", 245)
-local camBtn = button("Camera Lock: OFF", 275)
+local modeBtn = btn("Mode: Orbit", 225)
+local camBtn = btn("Camera Lock: OFF", 255)
 
 local status = Instance.new("TextLabel", frame)
+status.Position = UDim2.new(0,10,0,290)
 status.Size = UDim2.new(1,-20,0,20)
-status.Position = UDim2.new(0,10,0,310)
 status.BackgroundTransparency = 1
 status.TextColor3 = Color3.new(1,1,1)
-status.TextXAlignment = Enum.TextXAlignment.Left
 status.Font = Enum.Font.SourceSans
-status.TextSize = 14
+status.TextXAlignment = Enum.TextXAlignment.Left
 status.Text = "Status: Idle"
 
-local distLabel = status:Clone()
-distLabel.Position = UDim2.new(0,10,0,330)
-distLabel.Text = "Distance: N/A"
-distLabel.Parent = frame
-
--- ================== UTILS ==================
-local function getPing()
-	local ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-	return math.clamp(ping / 1000, 0.06, 0.25)
-end
-
--- REAL MOVEMENT PREDICTION
-local function predictPosition(hrp, dt)
-	local vel = hrp.AssemblyLinearVelocity
-	local pingLead = getPing()
-
-	-- Horizontal lead
-	local horizontalVel = Vector3.new(vel.X, 0, vel.Z)
-	local predicted = hrp.Position + horizontalVel * (predictionStrength + pingLead)
-
-	-- Vertical handling (jump/fall)
-	predicted += Vector3.new(0, math.clamp(vel.Y * 0.15, -6, 6), 0)
-
-	return predicted
-end
-
--- ================== DROPDOWN ==================
-local function refreshDropdown()
+-- ================= TARGET DROPDOWN =================
+local function refreshTargets()
 	for _, c in ipairs(dropdown:GetChildren()) do
 		if c:IsA("TextButton") then c:Destroy() end
 	end
 
 	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer then
+		if p ~= LP then
 			local b = Instance.new("TextButton", dropdown)
-			b.Size = UDim2.new(1,-6,0,26)
+			b.Size = UDim2.new(1,-6,0,24)
 			b.Text = p.Name
-			b.BackgroundColor3 = Color3.fromRGB(65,65,65)
-			b.TextColor3 = Color3.new(1,1,1)
 			b.Font = Enum.Font.SourceSans
 			b.TextSize = 14
+			b.TextColor3 = Color3.new(1,1,1)
+			b.BackgroundColor3 = Color3.fromRGB(70,70,70)
 
 			b.MouseButton1Click:Connect(function()
-				selectedPlayer = p
-				selectedUserId = p.UserId
+				targetPlayer = p
+				targetUserId = p.UserId
 				targetBtn.Text = "Target: "..p.Name.." ▼"
-				dropdown.Visible = false
 				status.Text = "Status: Target Locked"
+				dropdown.Visible = false
 			end)
 		end
 	end
@@ -129,41 +108,29 @@ end
 
 targetBtn.MouseButton1Click:Connect(function()
 	dropdown.Visible = not dropdown.Visible
-	refreshDropdown()
+	refreshTargets()
 end)
 
 Players.PlayerRemoving:Connect(function(p)
-	if selectedUserId and p.UserId == selectedUserId then
-		selectedPlayer = nil
+	if targetUserId and p.UserId == targetUserId then
+		targetPlayer = nil
 		status.Text = "Status: Waiting for target"
 	end
 end)
 
 Players.PlayerAdded:Connect(function(p)
-	if selectedUserId and p.UserId == selectedUserId then
-		selectedPlayer = p
+	if targetUserId and p.UserId == targetUserId then
+		targetPlayer = p
 		status.Text = "Status: Target Rejoined"
 	end
 end)
 
--- ================== CONTROLS ==================
+-- ================= CONTROLS =================
 modeBtn.MouseButton1Click:Connect(function()
-	if flingMode == "Orbit" then
-		flingMode = "Fast"
-	elseif flingMode == "Fast" then
-		flingMode = "Direct"
-	else
-		flingMode = "Orbit"
-	end
+	if flingMode == "Orbit" then flingMode = "Fast"
+	elseif flingMode == "Fast" then flingMode = "Direct"
+	else flingMode = "Orbit" end
 	modeBtn.Text = "Mode: "..flingMode
-end)
-
-predBtn.MouseButton1Click:Connect(function()
-	predictionStrength += 0.05
-	if predictionStrength > MAX_PREDICTION then
-		predictionStrength = BASE_PREDICTION
-	end
-	predBtn.Text = string.format("Prediction: %.2f", predictionStrength)
 end)
 
 camBtn.MouseButton1Click:Connect(function()
@@ -171,74 +138,68 @@ camBtn.MouseButton1Click:Connect(function()
 	camBtn.Text = "Camera Lock: "..(cameraLock and "ON" or "OFF")
 end)
 
--- ================== FLING CORE ==================
-local flingConn
-toggleBtn.MouseButton1Click:Connect(function()
-	if flingConn then
-		flingConn:Disconnect()
-		flingConn = nil
-		toggleBtn.Text = "Start Fling"
+-- ================= FLING CORE (SAFE) =================
+local conn
+startBtn.MouseButton1Click:Connect(function()
+	if conn then
+		conn:Disconnect()
+		conn = nil
+		startBtn.Text = "Start Fling"
 		status.Text = "Status: Stopped"
-		Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
 		return
 	end
 
-	if not selectedUserId then
-		status.Text = "Status: No target selected"
+	if not targetUserId then
+		status.Text = "Status: No target"
 		return
 	end
 
-	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	local char = LP.Character or LP.CharacterAdded:Wait()
 	local hrp = char:WaitForChild("HumanoidRootPart")
+	prepCharacter(char)
 
-	toggleBtn.Text = "Stop Fling"
-	status.Text = "Status: Flinging ("..flingMode..")"
+	local bv = Instance.new("BodyVelocity", hrp)
+	bv.MaxForce = Vector3.new(1e6, 0, 1e6)
 
-	flingConn = RunService.Heartbeat:Connect(function(dt)
-		if not selectedPlayer then
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p.UserId == selectedUserId then
-					selectedPlayer = p
-				end
-			end
-			return
-		end
+	local bav = Instance.new("BodyAngularVelocity", hrp)
+	bav.MaxTorque = Vector3.new(0, 1e6, 0)
 
-		local tch = selectedPlayer.Character
-		if not tch then return end
-		local thrp = tch:FindFirstChild("HumanoidRootPart")
+	startBtn.Text = "Stop Fling"
+	status.Text = "Status: Flinging"
+
+	conn = RunService.Heartbeat:Connect(function()
+		if not targetPlayer or not targetPlayer.Character then return end
+		local thrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
 		if not thrp then return end
 
-		local predicted = predictPosition(thrp, dt)
-		local dist = (predicted - hrp.Position).Magnitude
+		local vel = thrp.AssemblyLinearVelocity
+		local predicted = thrp.Position + Vector3.new(vel.X, 0, vel.Z) * PREDICTION
 
-		if dist > SNAP_DISTANCE then
-			hrp.CFrame = CFrame.new(predicted)
-		end
-
-		local t = tick()
-		local offset, speed
-
+		local offset
 		if flingMode == "Orbit" then
-			offset = Vector3.new(math.cos(t)*5, 0, math.sin(t)*5)
-			speed = 230
+			offset = Vector3.new(math.cos(tick()*ORBIT_SPEED)*ORBIT_RADIUS, 0,
+								 math.sin(tick()*ORBIT_SPEED)*ORBIT_RADIUS)
+			bav.AngularVelocity = Vector3.new(0, 20, 0)
 		elseif flingMode == "Fast" then
-			offset = Vector3.new(math.cos(t*3)*7, 0, math.sin(t*3)*7)
-			speed = 340
-		else -- Direct
+			offset = Vector3.new(math.cos(tick()*ORBIT_SPEED*2)*8, 0,
+								 math.sin(tick()*ORBIT_SPEED*2)*8)
+			bav.AngularVelocity = Vector3.new(0, 40, 0)
+		else
 			offset = Vector3.zero
-			speed = 420
+			bav.AngularVelocity = Vector3.zero
 		end
 
-		char:PivotTo(CFrame.new(predicted + offset))
-		hrp.AssemblyAngularVelocity = Vector3.new(9999,9999,9999)
-		hrp.AssemblyLinearVelocity = (predicted - hrp.Position).Unit * speed
+		local goal = predicted + offset
+		local dir = (goal - hrp.Position)
+		if dir.Magnitude > MAX_DIST then
+			hrp.CFrame = CFrame.new(goal)
+		end
+
+		bv.Velocity = dir.Unit * CHASE_FORCE
 
 		if cameraLock then
 			Camera.CameraSubject = thrp
-			Camera.CFrame = CFrame.new(Camera.CFrame.Position, predicted)
+			Camera.CFrame = CFrame.new(Camera.CFrame.Position, thrp.Position)
 		end
-
-		distLabel.Text = string.format("Distance: %.1f studs", dist)
 	end)
 end)
