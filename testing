@@ -1,4 +1,4 @@
----- SERVICES
+--=== SERVICES ===--
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -7,31 +7,36 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Remote = RS:WaitForChild("Event", 9e9)
 
--- SETTINGS
-local FOLLOW_DISTANCE = 2
-local FOLLOW_THRESHOLD = 1
-local HIT_DELAY = 0.3
-local STOMP_DELAY = 0
-local STOMP_HP = 1
-
--- STATE
+--=== STATE ===--
 local enabled = false
 local mode = "All"
 local followStyle = "Behind"
+local followDistance = 2
 local kills = 0
 local currentTarget = nil
 
--- POSITION MODES
-local positionOffsets = {
-	["Behind"] = Vector3.new(0, 0, -FOLLOW_DISTANCE),
-	["Front"]  = Vector3.new(0, 0, FOLLOW_DISTANCE),
-	["Left"]   = Vector3.new(-FOLLOW_DISTANCE, 0, 0),
-	["Right"]  = Vector3.new(FOLLOW_DISTANCE, 0, 0),
-	["Above"]  = Vector3.new(0, FOLLOW_DISTANCE * 2, 0),
-	["Below"]  = Vector3.new(0, -FOLLOW_DISTANCE * 2, 0)
-}
+--=== SETTINGS ===--
+local FOLLOW_THRESHOLD = 1
+local HIT_DELAY = 0.1
+local STOMP_DELAY = 0.05
+local STOMP_REPEAT = 5
+local STOMP_HP = 1
+local STOMP_RETRY_TIME = 2
 
--- UTILS
+--=== POSITION OFFSETS ===--
+local function getOffset()
+	local d = followDistance
+	return {
+		["Behind"] = Vector3.new(0, 0, d),       -- swapped
+		["Front"]  = Vector3.new(0, 0, -d),      -- swapped
+		["Left"]   = Vector3.new(-d, 0, 0),
+		["Right"]  = Vector3.new(d, 0, 0),
+		["Above"]  = Vector3.new(0, d * 2, 0),
+		["Below"]  = Vector3.new(0, -d * 2, 0)
+	}
+end
+
+--=== UTILITIES ===--
 local function getHRP(char)
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
@@ -52,7 +57,7 @@ local function smartFollow(myHRP, targetHRP)
 	myHRP.AssemblyLinearVelocity = Vector3.zero
 	myHRP.AssemblyAngularVelocity = Vector3.zero
 
-	local offset = positionOffsets[followStyle] or Vector3.new(0, 0, -FOLLOW_DISTANCE)
+	local offset = getOffset()[followStyle] or Vector3.new(0, 0, -followDistance)
 	local worldOffset = targetHRP.CFrame:VectorToWorldSpace(offset)
 	local goal = targetHRP.Position + worldOffset
 
@@ -69,7 +74,7 @@ local function stomp()
 	Remote:FireServer({ Event = "Stomp" })
 end
 
--- GUI SETUP
+--=== GUI ===--
 local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 gui.Name = "SmartBotGUI"
 gui.ResetOnSpawn = false
@@ -113,23 +118,34 @@ posBtn.Font = Enum.Font.SourceSans
 posBtn.TextScaled = true
 posBtn.Text = "Position: Behind"
 
-local statusLabel = makeLabel("Status: Idle", 200)
-local killLabel = makeLabel("Kills: 0", 230)
+local distBtn = Instance.new("TextButton", gui)
+distBtn.Size = UDim2.new(0, 180, 0, 30)
+distBtn.Position = UDim2.new(0, 20, 0, 200)
+distBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+distBtn.TextColor3 = Color3.fromRGB(255,255,255)
+distBtn.Font = Enum.Font.SourceSans
+distBtn.TextScaled = true
+distBtn.Text = "Distance: 2"
+
+local statusLabel = makeLabel("Status: Idle", 240)
+local killLabel = makeLabel("Kills: 0", 270)
 
 local function updateGUI()
 	toggleBtn.Text = enabled and "AUTO: ON" or "AUTO: OFF"
 	toggleBtn.BackgroundColor3 = enabled and Color3.fromRGB(0,140,0) or Color3.fromRGB(35,35,35)
 	targetBtn.Text = "Target: " .. mode
 	posBtn.Text = "Position: " .. followStyle
+	distBtn.Text = "Distance: " .. tostring(followDistance)
 	killLabel.Text = "Kills: " .. kills
 end
 
+--=== GUI CONTROLS ===--
 toggleBtn.MouseButton1Click:Connect(function()
 	enabled = not enabled
 	updateGUI()
 end)
 
-UIS.InputBegan:Connect(function(i, gp)
+UIS.InputBegan:Connect(function(i,gp)
 	if gp then return end
 	if i.KeyCode == Enum.KeyCode.K then
 		enabled = not enabled
@@ -139,7 +155,7 @@ end)
 
 targetBtn.MouseButton1Click:Connect(function()
 	local options = { "All", "Nearest" }
-	for _, p in ipairs(Players:GetPlayers()) do
+	for _,p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer then table.insert(options, p.Name) end
 	end
 	local idx = table.find(options, mode) or 1
@@ -154,11 +170,16 @@ posBtn.MouseButton1Click:Connect(function()
 	updateGUI()
 end)
 
--- TARGET SELECT
+distBtn.MouseButton1Click:Connect(function()
+	followDistance = followDistance % 10 + 1 -- cycle 1 → 10
+	updateGUI()
+end)
+
+--=== TARGETING ===--
 local function getTarget(myHRP)
 	if mode == "Nearest" then
 		local best, dist = nil, math.huge
-		for _, p in ipairs(Players:GetPlayers()) do
+		for _,p in ipairs(Players:GetPlayers()) do
 			if p ~= LocalPlayer and alive(p) then
 				local hrp = getHRP(p.Character)
 				if hrp then
@@ -174,14 +195,14 @@ local function getTarget(myHRP)
 		local p = Players:FindFirstChild(mode)
 		if p and alive(p) then return p end
 	end
-	for _, p in ipairs(Players:GetPlayers()) do
+	for _,p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and alive(p) then
 			return p
 		end
 	end
 end
 
--- MAIN LOOP
+--=== MAIN LOOP ===--
 task.spawn(function()
 	while true do
 		RunService.Heartbeat:Wait()
@@ -207,25 +228,27 @@ task.spawn(function()
 				continue
 			end
 
-			-- ATTACK until knocked
-			while enabled and hum.Health > 0 and not hum.PlatformStand do
+			-- 🔁 ATTACK PHASE
+			while enabled and hum.Health > STOMP_HP do
 				smartFollow(myHRP, hrp)
 				hit(hrp)
 				task.wait(HIT_DELAY)
 			end
 
-			-- ONCE KNOCKED → give time → stomp + attack
-			if enabled and hum.PlatformStand and hum.Health > 0 then
-				task.wait(0.5)
-				for _ = 1, 5 do
-					myHRP.CFrame = hrp.CFrame
+			-- 🦶 STOMP PHASE w/ RETRY
+			local start = tick()
+			while enabled and hum.Health <= STOMP_HP and hum.Health > 0 do
+				myHRP.CFrame = hrp.CFrame
+				for _ = 1, STOMP_REPEAT do
 					stomp()
-					hit(hrp)
 					task.wait(STOMP_DELAY)
+				end
+
+				if tick() - start >= STOMP_RETRY_TIME then
+					break -- retry attacking
 				end
 			end
 
-			-- WAIT FOR RESPAWN
 			if hum.Health <= 0 then
 				local oldChar = char
 				repeat task.wait(0.1)
