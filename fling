@@ -1,4 +1,4 @@
--- Rocket Fling GUI (Front-Biased, All-Sides, Persistent Target)
+--- Rocket Fling GUI (Front-Biased, All-Sides, Persistent Target)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
