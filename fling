@@ -1,4 +1,4 @@
--- SUPER FLING (FIXED: NO SELF-DEATH, REAL TARGETING)
+--- SUPER FLING (FIXED: NO SELF-DEATH, REAL TARGETING)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
