@@ -1,0 +1,89 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local Remote = ReplicatedStorage:WaitForChild("Event", 9e9)
+
+-- SETTINGS
+local MY_HP_TRIGGER = 1          -- 🔥 ONLY RUN WHEN YOU ARE 1 HP
+local TARGET_HP_TRIGGER = 4      -- stomp when enemy reaches 4 or less
+local HIT_DELAY = 0.08
+local STOMP_SPAM = 6
+local STOMP_DELAY = 0.05
+local BEHIND_DISTANCE = 2
+
+-- Utilities
+local function getHRP(char)
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum(char)
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function fireHit(targetChar)
+	Remote:FireServer({
+		Event = "Hit",
+		ClientHitbox = {
+			targetChar
+		}
+	})
+end
+
+local function fireStomp()
+	Remote:FireServer({
+		Event = "Stomp"
+	})
+end
+
+while true do
+	local myChar = LocalPlayer.Character
+	local myHum = getHum(myChar)
+	local myHRP = getHRP(myChar)
+
+	-- ❌ DO NOTHING UNLESS YOU ARE 1 HP
+	if not myHum or not myHRP or myHum.Health > MY_HP_TRIGGER then
+		task.wait(0.15)
+		continue
+	end
+
+	local originalCFrame = myHRP.CFrame
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character then
+			local targetChar = plr.Character
+			local targetHum = getHum(targetChar)
+			local targetHRP = getHRP(targetChar)
+
+			if targetHum and targetHRP and targetHum.Health > 0 then
+				-- TELEPORT BEHIND TARGET
+				myHRP.CFrame =
+					targetHRP.CFrame *
+					CFrame.new(0, 0, BEHIND_DISTANCE)
+
+				-- HIT UNTIL TARGET IS LOW
+				while targetHum.Health > TARGET_HP_TRIGGER
+					and targetHum.Health > 0
+					and myHum.Health <= MY_HP_TRIGGER do
+
+					fireHit(targetChar)
+					task.wait(HIT_DELAY)
+				end
+
+				-- STOMP PHASE
+				if targetHum.Health <= TARGET_HP_TRIGGER and myHum.Health <= MY_HP_TRIGGER then
+					myHRP.CFrame = targetHRP.CFrame
+					for i = 1, STOMP_SPAM do
+						fireStomp()
+						task.wait(STOMP_DELAY)
+					end
+				end
+
+				-- RETURN TO ORIGINAL SPOT
+				myHRP.CFrame = originalCFrame
+			end
+		end
+	end
+
+	task.wait(0.2)
+end
