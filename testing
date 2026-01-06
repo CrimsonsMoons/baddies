@@ -1,4 +1,4 @@
----================ SERVICES ================
+--==== SERVICES ====--
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -7,15 +7,15 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Remote = RS:WaitForChild("Event", 9e9)
 
---================ SETTINGS ================
+--==== SETTINGS ====--
 local HIT_DELAY = 0.1
 local STOMP_DELAY = 0.05
 local STOMP_REPEAT = 5
-local STOMP_HP = 1
 local STOMP_RETRY_TIME = 2
+local STOMP_HP = 1
 local FOLLOW_THRESHOLD = 1
 
---================ STATE ===================
+--==== STATE ====--
 local enabled = false
 local mode = "All"
 local followStyle = "Behind"
@@ -23,7 +23,7 @@ local followDistance = 2
 local kills = 0
 local currentTarget = nil
 
---================ UTIL ====================
+--==== HELPER FUNCS ====--
 local function getHRP(char)
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
@@ -40,12 +40,12 @@ local function alive(plr)
 	return hum and hrp and hum.Health > 0
 end
 
---================ POSITION OFFSET =========
+--==== FOLLOW OFFSET ====--
 local function getOffset()
 	local d = followDistance
 	return {
-		Behind = Vector3.new(0, 0, d),   -- swapped
-		Front  = Vector3.new(0, 0, -d),  -- swapped
+		Behind = Vector3.new(0, 0, d),    -- swapped
+		Front  = Vector3.new(0, 0, -d),   -- swapped
 		Left   = Vector3.new(-d, 0, 0),
 		Right  = Vector3.new(d, 0, 0),
 		Above  = Vector3.new(0, d * 2, 0),
@@ -54,18 +54,14 @@ local function getOffset()
 end
 
 local function smartFollow(myHRP, targetHRP)
-	myHRP.AssemblyLinearVelocity = Vector3.zero
-	myHRP.AssemblyAngularVelocity = Vector3.zero
-
 	local offset = getOffset()[followStyle]
 	local goal = targetHRP.Position + targetHRP.CFrame:VectorToWorldSpace(offset)
-
 	if (myHRP.Position - goal).Magnitude > FOLLOW_THRESHOLD then
 		myHRP.CFrame = CFrame.new(goal, targetHRP.Position)
 	end
 end
 
---================ REMOTES =================
+--==== COMBAT REMOTES ====--
 local function hit(part)
 	Remote:FireServer({
 		Event = "Hit",
@@ -77,19 +73,19 @@ local function stomp()
 	Remote:FireServer({ Event = "Stomp" })
 end
 
---================ GUI =====================
+--==== GUI ====--
 local gui = Instance.new("ScreenGui", LocalPlayer.PlayerGui)
-gui.Name = "SmartCombatGUI"
+gui.Name = "CombatBotGUI"
 gui.ResetOnSpawn = false
 
 local function button(text, y)
 	local b = Instance.new("TextButton", gui)
 	b.Size = UDim2.new(0, 180, 0, 30)
 	b.Position = UDim2.new(0, 20, 0, y)
-	b.BackgroundColor3 = Color3.fromRGB(45,45,45)
+	b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 	b.TextColor3 = Color3.new(1,1,1)
-	b.TextScaled = true
 	b.Font = Enum.Font.SourceSansBold
+	b.TextScaled = true
 	b.Text = text
 	return b
 end
@@ -104,52 +100,53 @@ status.Size = UDim2.new(0, 260, 0, 28)
 status.Position = UDim2.new(0, 20, 0, 240)
 status.BackgroundTransparency = 1
 status.TextColor3 = Color3.new(1,1,1)
-status.TextScaled = true
 status.Font = Enum.Font.SourceSansBold
+status.TextScaled = true
 status.Text = "Status: Idle"
 
-local killsLabel = Instance.new("TextLabel", gui)
-killsLabel.Size = UDim2.new(0, 260, 0, 28)
-killsLabel.Position = UDim2.new(0, 20, 0, 270)
-killsLabel.BackgroundTransparency = 1
-killsLabel.TextColor3 = Color3.new(1,1,1)
-killsLabel.TextScaled = true
-killsLabel.Font = Enum.Font.SourceSansBold
-killsLabel.Text = "Kills: 0"
+local killLabel = Instance.new("TextLabel", gui)
+killLabel.Size = UDim2.new(0, 260, 0, 28)
+killLabel.Position = UDim2.new(0, 20, 0, 270)
+killLabel.BackgroundTransparency = 1
+killLabel.TextColor3 = Color3.new(1,1,1)
+killLabel.Font = Enum.Font.SourceSansBold
+killLabel.TextScaled = true
+killLabel.Text = "Kills: 0"
 
 local function updateGUI()
 	toggleBtn.Text = enabled and "AUTO: ON" or "AUTO: OFF"
 	targetBtn.Text = "Target: " .. mode
 	posBtn.Text = "Position: " .. followStyle
-	distBtn.Text = "Distance: " .. followDistance
-	killsLabel.Text = "Kills: " .. kills
+	distBtn.Text = "Distance: " .. tostring(followDistance)
+	killLabel.Text = "Kills: " .. kills
 end
 
+--==== GUI LOGIC ====--
 toggleBtn.MouseButton1Click:Connect(function()
 	enabled = not enabled
 	updateGUI()
 end)
 
-UIS.InputBegan:Connect(function(i,gp)
+UIS.InputBegan:Connect(function(input, gp)
 	if gp then return end
-	if i.KeyCode == Enum.KeyCode.K then
+	if input.KeyCode == Enum.KeyCode.K then
 		enabled = not enabled
 		updateGUI()
 	end
 end)
 
 targetBtn.MouseButton1Click:Connect(function()
-	local list = { "All", "Nearest" }
+	local opts = { "All", "Nearest" }
 	for _,p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer then table.insert(list, p.Name) end
+		if p ~= LocalPlayer then table.insert(opts, p.Name) end
 	end
-	mode = list[(table.find(list, mode) or 1) % #list + 1]
+	mode = opts[(table.find(opts, mode) or 1) % #opts + 1]
 	updateGUI()
 end)
 
 posBtn.MouseButton1Click:Connect(function()
-	local list = { "Behind", "Front", "Left", "Right", "Above", "Below" }
-	followStyle = list[(table.find(list, followStyle) or 1) % #list + 1]
+	local styles = { "Behind", "Front", "Left", "Right", "Above", "Below" }
+	followStyle = styles[(table.find(styles, followStyle) or 1) % #styles + 1]
 	updateGUI()
 end)
 
@@ -158,7 +155,7 @@ distBtn.MouseButton1Click:Connect(function()
 	updateGUI()
 end)
 
---================ TARGETING ===============
+--==== TARGET FUNCTION ====--
 local function getTarget(myHRP)
 	if mode == "Nearest" then
 		local best, dist = nil, math.huge
@@ -166,14 +163,23 @@ local function getTarget(myHRP)
 			if p ~= LocalPlayer and alive(p) then
 				local hrp = getHRP(p.Character)
 				local d = (hrp.Position - myHRP.Position).Magnitude
-				if d < dist then best, dist = p, d end
+				if d < dist then
+					best, dist = p, d
+				end
 			end
 		end
 		return best
+
 	elseif mode ~= "All" then
 		local p = Players:FindFirstChild(mode)
-		if alive(p) then return p end
+		if p and alive(p) then
+			return p -- lock only to selected player
+		else
+			return nil
+		end
 	end
+
+	-- fallback to anyone
 	for _,p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and alive(p) then
 			return p
@@ -181,7 +187,7 @@ local function getTarget(myHRP)
 	end
 end
 
---================ MAIN LOOP ===============
+--==== MAIN LOOP ====--
 task.spawn(function()
 	while true do
 		RunService.Heartbeat:Wait()
@@ -203,14 +209,14 @@ task.spawn(function()
 			local hrp = getHRP(char)
 			if not hum or not hrp then break end
 
-			-- ATTACK
+			-- ATTACK PHASE
 			while enabled and hum.Health > STOMP_HP do
 				smartFollow(myHRP, hrp)
 				hit(hrp)
 				task.wait(HIT_DELAY)
 			end
 
-			-- STOMP + HIT EVERY 0.7s
+			-- STOMP PHASE w/ ATTACK every 0.7s
 			local stompStart = tick()
 			local lastHit = 0
 			while enabled and hum.Health <= STOMP_HP and hum.Health > 0 do
