@@ -1,16 +1,42 @@
---- StarterPlayerScripts: LocalScript
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
-local TargetingModule = require(ReplicatedStorage:WaitForChild("TargetingModule"))
+-- === Inlined Targeting Module ===
+local function GetValidTarget(player)
+	if not player or not player.Character then return nil end
+	local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+	local hum = player.Character:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum or hum.Health <= 0 then return nil end
+	return hrp, hum
+end
 
--- GUI Setup
+local function GetPredictedPosition(hrp, predictionTime)
+	return hrp.Position + (hrp.AssemblyLinearVelocity * predictionTime)
+end
+
+local function GetNearestPlayer(originPlayer)
+	local nearest, shortestDist = nil, math.huge
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= originPlayer then
+			local hrp = GetValidTarget(plr)
+			if hrp then
+				local dist = (originPlayer.Character and originPlayer.Character:FindFirstChild("HumanoidRootPart") or Vector3.zero) - hrp.Position
+				local mag = dist.Magnitude
+				if mag < shortestDist then
+					shortestDist = mag
+					nearest = plr
+				end
+			end
+		end
+	end
+	return nearest
+end
+
+-- === GUI Setup ===
 local screenGui = Instance.new("ScreenGui", PlayerGui)
 screenGui.Name = "FlingOrbitGUI"
 screenGui.ResetOnSpawn = false
@@ -30,16 +56,6 @@ toggleBtn.TextColor3 = Color3.new(1, 1, 1)
 toggleBtn.Font = Enum.Font.SourceSansBold
 toggleBtn.TextSize = 16
 
-local dropdownLabel = Instance.new("TextLabel", mainFrame)
-dropdownLabel.Size = UDim2.new(1, -20, 0, 20)
-dropdownLabel.Position = UDim2.new(0, 10, 0, 60)
-dropdownLabel.Text = "Select Player:"
-dropdownLabel.TextColor3 = Color3.new(1, 1, 1)
-dropdownLabel.BackgroundTransparency = 1
-dropdownLabel.Font = Enum.Font.SourceSans
-dropdownLabel.TextSize = 14
-dropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
-
 local playerDropdown = Instance.new("TextButton", mainFrame)
 playerDropdown.Size = UDim2.new(1, -20, 0, 30)
 playerDropdown.Position = UDim2.new(0, 10, 0, 85)
@@ -56,20 +72,10 @@ dropdownFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 dropdownFrame.Visible = false
 dropdownFrame.ScrollBarThickness = 6
 dropdownFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-dropdownFrame.ClipsDescendants = true
 
 local layout = Instance.new("UIListLayout", dropdownFrame)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Padding = UDim.new(0, 2)
-
-local autoRefreshToggle = Instance.new("TextButton", mainFrame)
-autoRefreshToggle.Size = UDim2.new(1, -20, 0, 20)
-autoRefreshToggle.Position = UDim2.new(0, 10, 0, 200)
-autoRefreshToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-autoRefreshToggle.Text = "Auto Refresh: ON"
-autoRefreshToggle.TextColor3 = Color3.new(1, 1, 1)
-autoRefreshToggle.Font = Enum.Font.SourceSans
-autoRefreshToggle.TextSize = 14
 
 local speedSlider = Instance.new("TextBox", mainFrame)
 speedSlider.Size = UDim2.new(1, -20, 0, 20)
@@ -101,51 +107,7 @@ detailsLabel.Font = Enum.Font.SourceSans
 detailsLabel.TextSize = 14
 detailsLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local cameraLockToggle = Instance.new("TextButton", mainFrame)
-cameraLockToggle.Size = UDim2.new(1, -20, 0, 20)
-cameraLockToggle.Position = UDim2.new(0, 10, 0, 290)
-cameraLockToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-cameraLockToggle.Text = "Camera Lock: OFF"
-cameraLockToggle.TextColor3 = Color3.new(1, 1, 1)
-cameraLockToggle.Font = Enum.Font.SourceSans
-cameraLockToggle.TextSize = 14
-
-local resetBtn = Instance.new("TextButton", mainFrame)
-resetBtn.Size = UDim2.new(1, -20, 0, 20)
-resetBtn.Position = UDim2.new(0, 10, 0, 315)
-resetBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-resetBtn.Text = "Reset"
-resetBtn.TextColor3 = Color3.new(1, 1, 1)
-resetBtn.Font = Enum.Font.SourceSansBold
-resetBtn.TextSize = 14
-
--- Dragging GUI
-local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
-mainFrame.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		dragStart = input.Position
-		startPos = mainFrame.Position
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
-		end)
-	end
-end)
-mainFrame.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement then
-		dragInput = input
-	end
-end)
-RunService.RenderStepped:Connect(function()
-	if dragging and dragInput then
-		local delta = dragInput.Position - dragStart
-		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-	end
-end)
-
--- Targeting System
+-- === Targeting System ===
 local selectedPlayer = nil
 local function refreshDropdown()
 	for _, child in ipairs(dropdownFrame:GetChildren()) do
@@ -175,60 +137,37 @@ playerDropdown.MouseButton1Click:Connect(function()
 	dropdownFrame.Visible = not dropdownFrame.Visible
 end)
 
-local autoRefresh = true
-autoRefreshToggle.MouseButton1Click:Connect(function()
-	autoRefresh = not autoRefresh
-	autoRefreshToggle.Text = "Auto Refresh: " .. (autoRefresh and "ON" or "OFF")
-end)
-if autoRefresh then
-	Players.PlayerAdded:Connect(refreshDropdown)
-	Players.PlayerRemoving:Connect(refreshDropdown)
-end
+-- Auto Target on Load
 refreshDropdown()
-selectedPlayer = TargetingModule.GetNearestPlayer(LocalPlayer)
+selectedPlayer = GetNearestPlayer(LocalPlayer)
 if selectedPlayer then
 	playerDropdown.Text = "Target: " .. selectedPlayer.Name
 end
 
--- Fling System
-local cameraConn, flingConn, charConn
-local cameraLock = false
+-- === Fling Logic ===
+local flingConn
 local orbitAngle = 0
 
-cameraLockToggle.MouseButton1Click:Connect(function()
-	cameraLock = not cameraLock
-	cameraLockToggle.Text = "Camera Lock: " .. (cameraLock and "ON" or "OFF")
-	if not cameraLock and cameraConn then
-		cameraConn:Disconnect()
-		cameraConn = nil
-		Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
-	end
-end)
-
 local function startFling()
-	if not selectedPlayer then return end
-	statusLabel.Text = "Status: Flinging " .. selectedPlayer.Name
+	if not selectedPlayer then
+		statusLabel.Text = "Status: No target"
+		return
+	end
 
+	statusLabel.Text = "Status: Flinging " .. selectedPlayer.Name
 	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	local hrp = char:WaitForChild("HumanoidRootPart")
-
-	if cameraLock then
-		cameraConn = RunService.RenderStepped:Connect(function()
-			local targetHRP = TargetingModule.GetValidTarget(selectedPlayer)
-			if targetHRP then
-				Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHRP.Position), 0.2)
-				Camera.CameraSubject = targetHRP
-			end
-		end)
-	end
 
 	flingConn = RunService.Heartbeat:Connect(function(dt)
 		orbitAngle += dt * (tonumber(speedSlider.Text) or 1500) * 0.01
 
-		local targetHRP = TargetingModule.GetValidTarget(selectedPlayer)
-		if not targetHRP then return end
+		local targetHRP = GetValidTarget(selectedPlayer)
+		if not targetHRP then
+			statusLabel.Text = "Status: Lost target"
+			return
+		end
 
-		local predictedPos = TargetingModule.GetPredictedPosition(targetHRP, 0.15)
+		local predictedPos = GetPredictedPosition(targetHRP, 0.15)
 		local distance = (predictedPos - hrp.Position).Magnitude
 		local radius = math.clamp(distance * 0.3, 3, 10)
 
@@ -239,73 +178,21 @@ local function startFling()
 		local desiredVelocity = (predictedPos - hrp.Position).Unit * 220
 		hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity:Lerp(desiredVelocity, 0.35)
 		hrp.AssemblyAngularVelocity = Vector3.new(9999, 9999, 9999)
+
 		detailsLabel.Text = string.format("Distance: %.1f studs", distance)
 	end)
-
-	charConn = LocalPlayer.CharacterAdded:Connect(startFling)
 end
 
+-- === Toggle Fling On/Off
 toggleBtn.MouseButton1Click:Connect(function()
 	if flingConn then
 		flingConn:Disconnect()
 		flingConn = nil
-		if cameraConn then cameraConn:Disconnect() cameraConn = nil end
-		if charConn then charConn:Disconnect() end
-		Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
 		statusLabel.Text = "Status: Stopped"
 		detailsLabel.Text = "Distance: N/A"
 		toggleBtn.Text = "Start Fling"
 	else
 		startFling()
 		toggleBtn.Text = "Stop Fling"
-	end
-end)
-
-resetBtn.MouseButton1Click:Connect(function()
-	screenGui:Destroy()
-end)
-
--- Click-to-target
-UserInputService.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-		local mouse = LocalPlayer:GetMouse()
-		local target = mouse.Target
-		if not target then return end
-		local model = target:FindFirstAncestorOfClass("Model")
-		local player = Players:GetPlayerFromCharacter(model)
-		if player and player ~= LocalPlayer then
-			selectedPlayer = player
-			playerDropdown.Text = "Target: " .. player.Name
-			statusLabel.Text = "Status: Selected via click"
-		end
-	end
-end)
-
--- Arrow Key Switching
-local function switchTarget(direction)
-	local all = {}
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer and TargetingModule.GetValidTarget(plr) then
-			table.insert(all, plr)
-		end
-	end
-
-	table.sort(all, function(a, b)
-		return a.Name < b.Name
-	end)
-
-	if #all == 0 then return end
-	local currentIndex = table.find(all, selectedPlayer) or 0
-	local nextIndex = (currentIndex + direction - 1) % #all + 1
-	selectedPlayer = all[nextIndex]
-	playerDropdown.Text = "Target: " .. selectedPlayer.Name
-	statusLabel.Text = "Status: Switched target"
-end
-
-UserInputService.InputBegan:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.Right then
-		switchTarget(1)
-	elseif input.KeyCode == Enum.KeyCode.Left then
-		switchTarget(-1)
 	end
 end)
