@@ -10,7 +10,7 @@ local STOMP_REPEAT = 5
 local FOLLOW_DISTANCE = 2
 local STOMP_HP = 1
 
--- Utils
+--- Utils
 local function getHum(char)
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
