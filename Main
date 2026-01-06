@@ -10,7 +10,7 @@ local STOMP_REPEAT = 6
 local BEHIND_DISTANCE = 2
 local ENEMY_STOMP_HP = 1
 
--- Utility functions
+--- Utility functions
 local function getHRP(char)
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
