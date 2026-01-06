@@ -1,4 +1,4 @@
----=== SERVICES ===--
+-- SERVICES
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -7,22 +7,21 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Remote = RS:WaitForChild("Event", 9e9)
 
---=== SETTINGS ===--
+-- SETTINGS
 local FOLLOW_DISTANCE = 2
 local FOLLOW_THRESHOLD = 1
 local HIT_DELAY = 0.1
 local STOMP_DELAY = 0.05
-local STOMP_REPEAT = 5
 local STOMP_HP = 1
 
---=== STATE ===--
+-- STATE
 local enabled = false
 local mode = "All"
 local followStyle = "Behind"
 local kills = 0
 local currentTarget = nil
 
---=== POSITION OFFSETS ===--
+-- POSITION OFFSETS
 local positionOffsets = {
 	["Behind"] = Vector3.new(0, 0, -FOLLOW_DISTANCE),
 	["Front"]  = Vector3.new(0, 0, FOLLOW_DISTANCE),
@@ -32,7 +31,7 @@ local positionOffsets = {
 	["Below"]  = Vector3.new(0, -FOLLOW_DISTANCE * 2, 0)
 }
 
---=== UTILITIES ===--
+-- UTILS
 local function getHRP(char)
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
@@ -70,7 +69,7 @@ local function stomp()
 	Remote:FireServer({ Event = "Stomp" })
 end
 
---=== GUI ===--
+-- GUI
 local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 gui.Name = "SmartBotGUI"
 gui.ResetOnSpawn = false
@@ -125,7 +124,6 @@ local function updateGUI()
 	killLabel.Text = "Kills: " .. kills
 end
 
---=== BUTTON EVENTS ===--
 toggleBtn.MouseButton1Click:Connect(function()
 	enabled = not enabled
 	updateGUI()
@@ -156,7 +154,6 @@ posBtn.MouseButton1Click:Connect(function()
 	updateGUI()
 end)
 
---=== TARGETING LOGIC ===--
 local function getTarget(myHRP)
 	if mode == "Nearest" then
 		local best, dist = nil, math.huge
@@ -183,7 +180,7 @@ local function getTarget(myHRP)
 	end
 end
 
---=== MAIN LOOP ===--
+-- MAIN LOOP
 task.spawn(function()
 	while true do
 		RunService.Heartbeat:Wait()
@@ -209,23 +206,20 @@ task.spawn(function()
 				continue
 			end
 
-			-- 🔁 ATTACK LOOP
-			while enabled and hum.Health > STOMP_HP do
+			-- ATTACK LOOP (Always attack)
+			while enabled and hum.Health > 0 do
 				smartFollow(myHRP, hrp)
 				hit(hrp)
+
+				-- STOMP IF AT LOW HP
+				if hum.Health <= STOMP_HP then
+					stomp()
+				end
+
 				task.wait(HIT_DELAY)
 			end
 
-			-- 🦶 STOMP LOOP
-			while enabled and hum.Health <= STOMP_HP and hum.Health > 0 do
-				myHRP.CFrame = hrp.CFrame
-				for _ = 1, STOMP_REPEAT do
-					stomp()
-					task.wait(STOMP_DELAY)
-				end
-			end
-
-			-- 💀 WAIT FOR RESPAWN
+			-- WAIT FOR RESPAWN
 			if hum.Health <= 0 then
 				local oldChar = char
 				repeat task.wait(0.1)
