@@ -1,60 +1,53 @@
---- Super Fling GUI (Fast Catch + Persistent Target)
+-- Rocket Fling GUI (Front-Biased, All-Sides, Persistent Target)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- GUI
-local screenGui = Instance.new("ScreenGui", PlayerGui)
-screenGui.Name = "FlingOrbitGUI"
-screenGui.ResetOnSpawn = false
+local gui = Instance.new("ScreenGui", PlayerGui)
+gui.Name = "RocketFlingGUI"
+gui.ResetOnSpawn = false
 
-local mainFrame = Instance.new("Frame", screenGui)
-mainFrame.Size = UDim2.new(0, 260, 0, 360)
-mainFrame.Position = UDim2.new(0, 10, 0.4, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Instance.new("UICorner", mainFrame)
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0,260,0,320)
+frame.Position = UDim2.new(0,10,0.4,0)
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+Instance.new("UICorner", frame)
 
-local toggleBtn = Instance.new("TextButton", mainFrame)
-toggleBtn.Size = UDim2.new(1, -20, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0, 10)
-toggleBtn.Text = "Start Fling"
-toggleBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
-toggleBtn.TextColor3 = Color3.new(1,1,1)
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 16
+local toggle = Instance.new("TextButton", frame)
+toggle.Size = UDim2.new(1,-20,0,40)
+toggle.Position = UDim2.new(0,10,0,10)
+toggle.Text = "Start Fling"
+toggle.BackgroundColor3 = Color3.fromRGB(0,170,255)
+toggle.TextColor3 = Color3.new(1,1,1)
+toggle.Font = Enum.Font.SourceSansBold
+toggle.TextSize = 16
 
-local playerDropdown = Instance.new("TextButton", mainFrame)
-playerDropdown.Size = UDim2.new(1, -20, 0, 30)
-playerDropdown.Position = UDim2.new(0, 10, 0, 60)
-playerDropdown.Text = "Select Player"
-playerDropdown.BackgroundColor3 = Color3.fromRGB(50,50,50)
-playerDropdown.TextColor3 = Color3.new(1,1,1)
+local dropdownBtn = Instance.new("TextButton", frame)
+dropdownBtn.Size = UDim2.new(1,-20,0,30)
+dropdownBtn.Position = UDim2.new(0,10,0,60)
+dropdownBtn.Text = "Select Player"
+dropdownBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+dropdownBtn.TextColor3 = Color3.new(1,1,1)
 
-local dropdownFrame = Instance.new("ScrollingFrame", mainFrame)
-dropdownFrame.Size = UDim2.new(1, -20, 0, 90)
-dropdownFrame.Position = UDim2.new(0, 10, 0, 95)
-dropdownFrame.Visible = false
-dropdownFrame.ScrollBarThickness = 6
-Instance.new("UIListLayout", dropdownFrame)
+local dropdown = Instance.new("ScrollingFrame", frame)
+dropdown.Size = UDim2.new(1,-20,0,90)
+dropdown.Position = UDim2.new(0,10,0,95)
+dropdown.Visible = false
+dropdown.ScrollBarThickness = 6
+Instance.new("UIListLayout", dropdown)
 
-local speedBox = Instance.new("TextBox", mainFrame)
-speedBox.Size = UDim2.new(1, -20, 0, 20)
-speedBox.Position = UDim2.new(0, 10, 0, 200)
-speedBox.Text = "1500"
-speedBox.BackgroundColor3 = Color3.fromRGB(50,50,50)
-speedBox.TextColor3 = Color3.new(1,1,1)
-
-local status = Instance.new("TextLabel", mainFrame)
-status.Size = UDim2.new(1, -20, 0, 20)
-status.Position = UDim2.new(0, 10, 0, 230)
+local status = Instance.new("TextLabel", frame)
+status.Size = UDim2.new(1,-20,0,20)
+status.Position = UDim2.new(0,10,0,200)
 status.Text = "Status: Idle"
 status.TextColor3 = Color3.new(1,1,1)
 status.BackgroundTransparency = 1
 status.TextXAlignment = Enum.TextXAlignment.Left
 
 -- =========================
--- TARGET TRACKING (UPGRADED)
+-- TARGET TRACKING (PERSIST)
 -- =========================
 local selectedPlayer
 local selectedUserId
@@ -63,7 +56,7 @@ local lastTargetPos
 local charConn
 
 local function hookCharacter(char)
-	trackedHRP = char:WaitForChild("HumanoidRootPart", 5)
+	trackedHRP = char:WaitForChild("HumanoidRootPart",5)
 	lastTargetPos = nil
 end
 
@@ -71,7 +64,6 @@ local function trackPlayer(player)
 	selectedPlayer = player
 	selectedUserId = player.UserId
 	trackedHRP = nil
-
 	if charConn then charConn:Disconnect() end
 
 	if player.Character then
@@ -84,11 +76,10 @@ local function trackPlayer(player)
 	end)
 end
 
--- Re-lock when player rejoins
 Players.PlayerAdded:Connect(function(p)
 	if selectedUserId and p.UserId == selectedUserId then
-		playerDropdown.Text = "Target: " .. p.Name
 		trackPlayer(p)
+		dropdownBtn.Text = "Target: "..p.Name
 		status.Text = "Status: Target Rejoined"
 	end
 end)
@@ -96,40 +87,39 @@ end)
 -- =========================
 -- DROPDOWN
 -- =========================
-playerDropdown.MouseButton1Click:Connect(function()
-	dropdownFrame.Visible = not dropdownFrame.Visible
+dropdownBtn.MouseButton1Click:Connect(function()
+	dropdown.Visible = not dropdown.Visible
 end)
 
-local function refreshDropdown()
-	for _,c in ipairs(dropdownFrame:GetChildren()) do
+local function refresh()
+	for _,c in ipairs(dropdown:GetChildren()) do
 		if c:IsA("TextButton") then c:Destroy() end
 	end
-
 	for _,p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer then
-			local b = Instance.new("TextButton", dropdownFrame)
+			local b = Instance.new("TextButton", dropdown)
 			b.Size = UDim2.new(1,0,0,24)
 			b.Text = p.Name
 			b.BackgroundColor3 = Color3.fromRGB(60,60,60)
 			b.TextColor3 = Color3.new(1,1,1)
-
 			b.MouseButton1Click:Connect(function()
-				playerDropdown.Text = "Target: " .. p.Name
+				dropdownBtn.Text = "Target: "..p.Name
 				trackPlayer(p)
-				dropdownFrame.Visible = false
+				dropdown.Visible = false
 			end)
 		end
 	end
 end
 
-refreshDropdown()
-Players.PlayerAdded:Connect(refreshDropdown)
-Players.PlayerRemoving:Connect(refreshDropdown)
+refresh()
+Players.PlayerAdded:Connect(refresh)
+Players.PlayerRemoving:Connect(refresh)
 
 -- =========================
--- FLING (FASTER CATCH)
+-- FLING (ROCKET FRONT MODE)
 -- =========================
 local flingConn
+local attackTick = 0
 
 local function startFling()
 	if not selectedPlayer then
@@ -143,39 +133,56 @@ local function startFling()
 
 	flingConn = RunService.Heartbeat:Connect(function(dt)
 		if not trackedHRP then return end
+		attackTick += dt
 
-		local angleSpeed = tonumber(speedBox.Text) or 1500
-		local angle = tick() * math.rad(angleSpeed)
-		local offset = Vector3.new(math.cos(angle)*5, 0, math.sin(angle)*5)
-		char:PivotTo(CFrame.new(trackedHRP.Position + offset))
+		-- ===== FRONT-BIASED MULTI-SIDE ATTACK =====
+		local look = trackedHRP.CFrame.LookVector
+		local right = trackedHRP.CFrame.RightVector
+
+		-- Front most of the time
+		local mode = attackTick % 1
+		local offsetDir
+
+		if mode < 0.55 then
+			offsetDir = -look                -- FRONT (main)
+		elseif mode < 0.75 then
+			offsetDir = right               -- SIDE
+		elseif mode < 0.95 then
+			offsetDir = -right              -- OTHER SIDE
+		else
+			offsetDir = Vector3.new(0,1,0)  -- ABOVE (brief)
+		end
+
+		local attackOffset = offsetDir * 5
+		char:PivotTo(CFrame.new(trackedHRP.Position + attackOffset))
 
 		hrp.AssemblyAngularVelocity = Vector3.new(9999,9999,9999)
 
-		-- 🔥 FAST APPROACH (distance-scaled)
+		-- ===== ROCKET IN (FAST APPROACH) =====
 		local targetPos = trackedHRP.Position
 		if lastTargetPos then
 			local vel = (targetPos - lastTargetPos) / dt
-			targetPos += vel * 0.15
+			targetPos += vel * 0.2
 		end
 		lastTargetPos = trackedHRP.Position
 
 		local dir = targetPos - hrp.Position
 		local dist = dir.Magnitude
 		if dist > 0 then
-			local speed = math.clamp(200 + dist * 3, 200, 600)
-			hrp.AssemblyLinearVelocity = dir.Unit * speed
+			local rocketSpeed = math.clamp(300 + dist * 6, 300, 900)
+			hrp.AssemblyLinearVelocity = dir.Unit * rocketSpeed
 		end
 	end)
 end
 
-toggleBtn.MouseButton1Click:Connect(function()
+toggle.MouseButton1Click:Connect(function()
 	if flingConn then
 		flingConn:Disconnect()
 		flingConn = nil
 		status.Text = "Status: Stopped"
-		toggleBtn.Text = "Start Fling"
+		toggle.Text = "Start Fling"
 	else
 		startFling()
-		toggleBtn.Text = "Stop Fling"
+		toggle.Text = "Stop Fling"
 	end
 end)
