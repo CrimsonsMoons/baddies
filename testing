@@ -10,8 +10,8 @@ local Remote = RS:WaitForChild("Event", 9e9)
 -- SETTINGS
 local FOLLOW_DISTANCE = 2
 local FOLLOW_THRESHOLD = 1
-local HIT_DELAY = 0.2
-local STOMP_DELAY = 0.05
+local HIT_DELAY = 0.3
+local STOMP_DELAY = 0
 local STOMP_HP = 1
 
 -- STATE
