@@ -1,189 +1,202 @@
--local Players = game:GetService("Players")
+-- Super Fling GUI (Advanced Prediction + Persistent Target)
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Stats = game:GetService("Stats")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
--- === Targeting Helpers ===
-local function GetValidTarget(player)
-	if not player or not player.Character then return nil end
-	local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-	local hum = player.Character:FindFirstChildOfClass("Humanoid")
-	if not hrp or not hum or hum.Health <= 0 then return nil end
-	return hrp, hum
-end
+-- =====================
+-- CONFIG
+-- =====================
+local MAX_SNAP_DISTANCE = 40
+local BASE_PREDICTION = 0.15
+local MAX_PREDICTION = 0.35
 
-local function GetPredictedPosition(hrp, predictionTime)
-	return hrp.Position + (hrp.AssemblyLinearVelocity * predictionTime)
-end
-
--- === GUI Setup ===
+-- =====================
+-- GUI SETUP
+-- =====================
 local screenGui = Instance.new("ScreenGui", PlayerGui)
 screenGui.Name = "FlingOrbitGUI"
 screenGui.ResetOnSpawn = false
 
 local mainFrame = Instance.new("Frame", screenGui)
-mainFrame.Size = UDim2.new(0, 260, 0, 360)
-mainFrame.Position = UDim2.new(0, 10, 0.4, 0)
+mainFrame.Size = UDim2.new(0, 260, 0, 400)
+mainFrame.Position = UDim2.new(0, 10, 0.35, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
 
-local toggleBtn = Instance.new("TextButton", mainFrame)
-toggleBtn.Size = UDim2.new(1, -20, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0, 10)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-toggleBtn.Text = "Start Fling"
-toggleBtn.TextColor3 = Color3.new(1, 1, 1)
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 16
+local function makeButton(text, y)
+	local b = Instance.new("TextButton", mainFrame)
+	b.Size = UDim2.new(1, -20, 0, 22)
+	b.Position = UDim2.new(0, 10, 0, y)
+	b.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	b.Text = text
+	b.TextColor3 = Color3.new(1,1,1)
+	b.Font = Enum.Font.SourceSans
+	b.TextSize = 14
+	return b
+end
 
-local playerDropdown = Instance.new("TextButton", mainFrame)
-playerDropdown.Size = UDim2.new(1, -20, 0, 30)
-playerDropdown.Position = UDim2.new(0, 10, 0, 85)
-playerDropdown.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-playerDropdown.Text = "Select Player"
-playerDropdown.TextColor3 = Color3.new(1, 1, 1)
-playerDropdown.Font = Enum.Font.SourceSans
-playerDropdown.TextSize = 14
+local toggleBtn = makeButton("Start Fling", 10)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0,170,255)
 
-local dropdownFrame = Instance.new("ScrollingFrame", mainFrame)
-dropdownFrame.Size = UDim2.new(1, -20, 0, 80)
-dropdownFrame.Position = UDim2.new(0, 10, 0, 115)
-dropdownFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-dropdownFrame.Visible = false
-dropdownFrame.ScrollBarThickness = 6
-dropdownFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-
-local layout = Instance.new("UIListLayout", dropdownFrame)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Padding = UDim.new(0, 2)
-
-local speedSlider = Instance.new("TextBox", mainFrame)
-speedSlider.Size = UDim2.new(1, -20, 0, 20)
-speedSlider.Position = UDim2.new(0, 10, 0, 225)
-speedSlider.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-speedSlider.Text = "1500"
-speedSlider.TextColor3 = Color3.new(1, 1, 1)
-speedSlider.Font = Enum.Font.SourceSans
-speedSlider.TextSize = 14
-speedSlider.ClearTextOnFocus = false
+local playerBtn = makeButton("Select Player", 40)
+local predBox = makeButton("Prediction: 0.15", 70)
+local snapToggle = makeButton("Snap Back: ON", 100)
+local camToggle = makeButton("Camera Lock: OFF", 130)
 
 local statusLabel = Instance.new("TextLabel", mainFrame)
 statusLabel.Size = UDim2.new(1, -20, 0, 20)
-statusLabel.Position = UDim2.new(0, 10, 0, 250)
+statusLabel.Position = UDim2.new(0, 10, 0, 160)
 statusLabel.Text = "Status: Idle"
-statusLabel.TextColor3 = Color3.new(1, 1, 1)
+statusLabel.TextColor3 = Color3.new(1,1,1)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Font = Enum.Font.SourceSans
 statusLabel.TextSize = 14
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local detailsLabel = Instance.new("TextLabel", mainFrame)
-detailsLabel.Size = UDim2.new(1, -20, 0, 20)
-detailsLabel.Position = UDim2.new(0, 10, 0, 270)
-detailsLabel.Text = "Distance: N/A"
-detailsLabel.TextColor3 = Color3.new(1, 1, 1)
-detailsLabel.BackgroundTransparency = 1
-detailsLabel.Font = Enum.Font.SourceSans
-detailsLabel.TextSize = 14
-detailsLabel.TextXAlignment = Enum.TextXAlignment.Left
+local distLabel = statusLabel:Clone()
+distLabel.Position = UDim2.new(0,10,0,180)
+distLabel.Text = "Distance: N/A"
+distLabel.Parent = mainFrame
 
--- === Targeting System ===
-local selectedPlayer = nil
-local function refreshDropdown()
-	for _, child in ipairs(dropdownFrame:GetChildren()) do
-		if child:IsA("TextButton") then child:Destroy() end
-	end
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer then
-			local btn = Instance.new("TextButton")
-			btn.Size = UDim2.new(1, 0, 0, 24)
-			btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-			btn.Text = player.Name
-			btn.TextColor3 = Color3.new(1, 1, 1)
-			btn.Font = Enum.Font.SourceSans
-			btn.TextSize = 14
-			btn.Parent = dropdownFrame
-			btn.MouseButton1Click:Connect(function()
-				selectedPlayer = player
-				playerDropdown.Text = "Target: " .. player.Name
-				dropdownFrame.Visible = false
-			end)
-		end
-	end
-	dropdownFrame.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y)
+-- =====================
+-- TARGET TRACKING
+-- =====================
+local selectedPlayer
+local selectedUserId
+local snapEnabled = true
+local cameraLock = false
+local predictionStrength = BASE_PREDICTION
+
+-- =====================
+-- UTIL
+-- =====================
+local function getPing()
+	local net = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+	return math.clamp(net / 1000, 0.05, 0.25)
 end
 
-playerDropdown.MouseButton1Click:Connect(function()
-	dropdownFrame.Visible = not dropdownFrame.Visible
+local function getPrediction(hrp)
+	local ping = getPing()
+	local vel = hrp.AssemblyLinearVelocity
+	local jumpBoost = Vector3.new(0, math.clamp(vel.Y, -50, 50), 0)
+	return hrp.Position + (vel * predictionStrength) + jumpBoost
+end
+
+-- =====================
+-- PLAYER SELECTION
+-- =====================
+playerBtn.MouseButton1Click:Connect(function()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer then
+			selectedPlayer = p
+			selectedUserId = p.UserId
+			playerBtn.Text = "Target: " .. p.Name
+			statusLabel.Text = "Status: Target Locked"
+			break
+		end
+	end
 end)
 
-refreshDropdown()
+Players.PlayerAdded:Connect(function(p)
+	if selectedUserId and p.UserId == selectedUserId then
+		selectedPlayer = p
+		statusLabel.Text = "Status: Target Rejoined"
+	end
+end)
 
--- === Fling Logic ===
+Players.PlayerRemoving:Connect(function(p)
+	if selectedUserId and p.UserId == selectedUserId then
+		selectedPlayer = nil
+		statusLabel.Text = "Status: Waiting for target"
+	end
+end)
+
+-- =====================
+-- TOGGLES
+-- =====================
+predBox.MouseButton1Click:Connect(function()
+	predictionStrength += 0.05
+	if predictionStrength > MAX_PREDICTION then
+		predictionStrength = BASE_PREDICTION
+	end
+	predBox.Text = string.format("Prediction: %.2f", predictionStrength)
+end)
+
+snapToggle.MouseButton1Click:Connect(function()
+	snapEnabled = not snapEnabled
+	snapToggle.Text = "Snap Back: " .. (snapEnabled and "ON" or "OFF")
+end)
+
+camToggle.MouseButton1Click:Connect(function()
+	cameraLock = not cameraLock
+	camToggle.Text = "Camera Lock: " .. (cameraLock and "ON" or "OFF")
+end)
+
+-- =====================
+-- FLING CORE
+-- =====================
 local flingConn
-local orbitAngle = 0
-
-local function startFling()
-	if not selectedPlayer then
-		statusLabel.Text = "Status: No target selected"
-		return
-	end
-
-	statusLabel.Text = "Status: Flinging " .. selectedPlayer.Name
-	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-	local hrp = char:WaitForChild("HumanoidRootPart")
-
-	-- Ensure physics is working
-	for _, part in ipairs(char:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = true
-			part.Massless = false
-		end
-	end
-
-	flingConn = RunService.Heartbeat:Connect(function(dt)
-		orbitAngle += dt * (tonumber(speedSlider.Text) or 1500) * 0.01
-
-		local targetHRP = GetValidTarget(selectedPlayer)
-		if not targetHRP then
-			statusLabel.Text = "Status: Lost target"
-			return
-		end
-
-		local predictedPos = GetPredictedPosition(targetHRP, 0.12)
-		local direction = predictedPos - hrp.Position
-		local distance = direction.Magnitude
-
-		-- Hard pull if not yet inside the target
-		if distance > 1 then
-			hrp.AssemblyLinearVelocity = direction.Unit * 350
-		else
-			-- Start spinning when inside
-			hrp.AssemblyAngularVelocity = Vector3.new(9999, 9999, 9999)
-		end
-
-		local radius = math.clamp(distance * 0.15, 0.5, 2)
-		local offset = Vector3.new(math.cos(orbitAngle), 0.5, math.sin(orbitAngle)) * radius
-		local targetCFrame = CFrame.new(predictedPos + offset)
-
-		-- Use Lerp instead of PivotTo for collision
-		hrp.CFrame = hrp.CFrame:Lerp(targetCFrame, 0.25)
-
-		detailsLabel.Text = string.format("Distance: %.2f studs", distance)
-	end)
-end
-
 toggleBtn.MouseButton1Click:Connect(function()
 	if flingConn then
 		flingConn:Disconnect()
 		flingConn = nil
 		statusLabel.Text = "Status: Stopped"
-		detailsLabel.Text = "Distance: N/A"
 		toggleBtn.Text = "Start Fling"
-	else
-		startFling()
-		toggleBtn.Text = "Stop Fling"
+		Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
+		return
 	end
+
+	if not selectedUserId then
+		statusLabel.Text = "Status: No target"
+		return
+	end
+
+	toggleBtn.Text = "Stop Fling"
+	statusLabel.Text = "Status: Flinging"
+
+	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	local hrp = char:WaitForChild("HumanoidRootPart")
+
+	flingConn = RunService.Heartbeat:Connect(function()
+		if not selectedPlayer then
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.UserId == selectedUserId then
+					selectedPlayer = p
+					break
+				end
+			end
+			return
+		end
+
+		local tch = selectedPlayer.Character
+		if not tch then return end
+		local thrp = tch:FindFirstChild("HumanoidRootPart")
+		if not thrp then return end
+
+		local predicted = getPrediction(thrp)
+		local dist = (predicted - hrp.Position).Magnitude
+
+		if snapEnabled and dist > MAX_SNAP_DISTANCE then
+			hrp.CFrame = CFrame.new(predicted)
+		end
+
+		local angle = tick() * 12
+		local offset = Vector3.new(math.cos(angle)*5, 0, math.sin(angle)*5)
+
+		char:PivotTo(CFrame.new(predicted + offset))
+		hrp.AssemblyAngularVelocity = Vector3.new(9999,9999,9999)
+		hrp.AssemblyLinearVelocity = (predicted - hrp.Position).Unit * 260
+
+		if cameraLock then
+			Camera.CameraSubject = thrp
+			Camera.CFrame = CFrame.new(Camera.CFrame.Position, predicted)
+		end
+
+		distLabel.Text = string.format("Distance: %.1f", dist)
+	end)
 end)
