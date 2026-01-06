@@ -5,7 +5,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
---- === Inlined Targeting Module ===
+-- === Targeting Helpers ===
 local function GetValidTarget(player)
 	if not player or not player.Character then return nil end
 	local hrp = player.Character:FindFirstChild("HumanoidRootPart")
@@ -135,6 +135,14 @@ local function startFling()
 	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	local hrp = char:WaitForChild("HumanoidRootPart")
 
+	-- Ensure physics is working
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = true
+			part.Massless = false
+		end
+	end
+
 	flingConn = RunService.Heartbeat:Connect(function(dt)
 		orbitAngle += dt * (tonumber(speedSlider.Text) or 1500) * 0.01
 
@@ -144,19 +152,26 @@ local function startFling()
 			return
 		end
 
-		local predictedPos = GetPredictedPosition(targetHRP, 0.15)
-		local distance = (predictedPos - hrp.Position).Magnitude
-		local radius = math.clamp(distance * 0.3, 3, 10)
+		local predictedPos = GetPredictedPosition(targetHRP, 0.12)
+		local direction = predictedPos - hrp.Position
+		local distance = direction.Magnitude
 
-		local offset = Vector3.new(math.cos(orbitAngle), 0, math.sin(orbitAngle)) * radius
-		local newCFrame = CFrame.new(predictedPos + offset) * CFrame.Angles(orbitAngle, orbitAngle, orbitAngle)
-		char:PivotTo(newCFrame)
+		-- Hard pull if not yet inside the target
+		if distance > 1 then
+			hrp.AssemblyLinearVelocity = direction.Unit * 350
+		else
+			-- Start spinning when inside
+			hrp.AssemblyAngularVelocity = Vector3.new(9999, 9999, 9999)
+		end
 
-		local desiredVelocity = (predictedPos - hrp.Position).Unit * 220
-		hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity:Lerp(desiredVelocity, 0.35)
-		hrp.AssemblyAngularVelocity = Vector3.new(9999, 9999, 9999)
+		local radius = math.clamp(distance * 0.15, 0.5, 2)
+		local offset = Vector3.new(math.cos(orbitAngle), 0.5, math.sin(orbitAngle)) * radius
+		local targetCFrame = CFrame.new(predictedPos + offset)
 
-		detailsLabel.Text = string.format("Distance: %.1f studs", distance)
+		-- Use Lerp instead of PivotTo for collision
+		hrp.CFrame = hrp.CFrame:Lerp(targetCFrame, 0.25)
+
+		detailsLabel.Text = string.format("Distance: %.2f studs", distance)
 	end)
 end
 
