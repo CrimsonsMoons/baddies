@@ -1,0 +1,203 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Remote = RS:WaitForChild("Event", 9e9)
+
+--// SETTINGS
+local HIT_DELAY = 0.1
+local STOMP_DELAY = 0.05
+local STOMP_REPEAT = 5
+local FOLLOW_DISTANCE = 2
+local STOMP_HP = 1
+
+--// STATE
+local enabled = false
+local mode = "All" -- "All", "Nearest", or player.Name
+local killCount = 0
+
+--// UTILS
+local function getHRP(char)
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum(char)
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function isAlive(plr)
+	if not plr or not plr:IsDescendantOf(game) then return false end
+	if not plr.Character then return false end
+	local hum = getHum(plr.Character)
+	local hrp = getHRP(plr.Character)
+	return hum and hrp and hum.Health > 0
+end
+
+local function hit(part)
+	Remote:FireServer({ Event = "Hit", ClientHitbox = { part } })
+end
+
+local function stomp()
+	Remote:FireServer({ Event = "Stomp" })
+end
+
+--// UI SETUP
+local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+gui.Name = "AutoBotGUI"
+gui.ResetOnSpawn = false
+
+-- Toggle Button
+local toggleBtn = Instance.new("TextButton", gui)
+toggleBtn.Size = UDim2.new(0, 120, 0, 40)
+toggleBtn.Position = UDim2.new(0, 20, 0, 100)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.TextScaled = true
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.Text = "Auto: OFF"
+
+-- Dropdown Selector
+local dropdown = Instance.new("TextButton", gui)
+dropdown.Size = UDim2.new(0, 160, 0, 30)
+dropdown.Position = UDim2.new(0, 20, 0, 150)
+dropdown.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+dropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
+dropdown.TextScaled = true
+dropdown.Font = Enum.Font.SourceSans
+dropdown.Text = "Target: All"
+
+-- Status Label
+local statusLabel = Instance.new("TextLabel", gui)
+statusLabel.Size = UDim2.new(0, 250, 0, 30)
+statusLabel.Position = UDim2.new(0, 20, 0, 190)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.Text = "Status: Idle"
+
+-- Kill Count
+local killLabel = Instance.new("TextLabel", gui)
+killLabel.Size = UDim2.new(0, 250, 0, 30)
+killLabel.Position = UDim2.new(0, 20, 0, 220)
+killLabel.BackgroundTransparency = 1
+killLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+killLabel.TextScaled = true
+killLabel.Font = Enum.Font.SourceSans
+killLabel.Text = "Kills: 0"
+
+--// UI LOGIC
+local function updateStatus(text)
+	statusLabel.Text = "Status: " .. text
+end
+
+local function setEnabled(state)
+	enabled = state
+	toggleBtn.Text = enabled and "Auto: ON" or "Auto: OFF"
+	toggleBtn.BackgroundColor3 = enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(25, 25, 25)
+	updateStatus(enabled and "Running" or "Idle")
+end
+
+local function cycleMode()
+	local list = { "All", "Nearest" }
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer then table.insert(list, p.Name) end
+	end
+	local currentIndex = table.find(list, mode) or 1
+	mode = list[(currentIndex % #list) + 1]
+	dropdown.Text = "Target: " .. mode
+end
+
+toggleBtn.MouseButton1Click:Connect(function()
+	setEnabled(not enabled)
+end)
+
+dropdown.MouseButton1Click:Connect(cycleMode)
+
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.K then
+		setEnabled(not enabled)
+	end
+end)
+
+--// MAIN BOT LOOP
+task.spawn(function()
+	while true do
+		task.wait(0.15)
+		if not enabled then continue end
+
+		local myHRP = getHRP(LocalPlayer.Character)
+		if not myHRP then continue end
+
+		local targets = {}
+
+		if mode == "All" then
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= LocalPlayer and isAlive(p) then
+					table.insert(targets, p)
+				end
+			end
+		elseif mode == "Nearest" then
+			local closest, dist = nil, math.huge
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= LocalPlayer and isAlive(p) then
+					local hrp = getHRP(p.Character)
+					local d = (hrp.Position - myHRP.Position).Magnitude
+					if d < dist then
+						closest, dist = p, d
+					end
+				end
+			end
+			if closest then table.insert(targets, closest) end
+		else
+			local target = Players:FindFirstChild(mode)
+			if target and isAlive(target) then
+				table.insert(targets, target)
+			end
+		end
+
+		for _, plr in ipairs(targets) do
+			if not enabled then break end
+
+			local char = plr.Character
+			local hum = getHum(char)
+			local hrp = getHRP(char)
+			if not hum or not hrp then continue end
+
+			updateStatus("Attacking: " .. plr.Name)
+
+			while isAlive(plr) and hum.Health > STOMP_HP and enabled do
+				myHRP.CFrame = CFrame.new(
+					hrp.Position - hrp.CFrame.LookVector * FOLLOW_DISTANCE,
+					hrp.Position
+				)
+				hit(hrp)
+				task.wait(HIT_DELAY)
+			end
+
+			if isAlive(plr) and hum.Health <= STOMP_HP and enabled then
+				local oldChar = char
+				while plr.Character == oldChar and enabled do
+					local stompHRP = getHRP(plr.Character)
+					if stompHRP then
+						myHRP.CFrame = stompHRP.CFrame
+					end
+
+					for _ = 1, STOMP_REPEAT do
+						stomp()
+						task.wait(STOMP_DELAY)
+					end
+
+					task.wait(0.1)
+				end
+				killCount += 1
+				killLabel.Text = "Kills: " .. tostring(killCount)
+			end
+
+			updateStatus("Searching...")
+		end
+	end
+end)
