@@ -1,80 +1,111 @@
---- =========================
--- SMART FLING LOGIC (UPGRADED)
+-- =========================
+-- SMART FLING LOGIC v2 (ANTI-DEATH + ANTI-VOID)
 -- =========================
 
-local flingConn, charConn
+local flingConn, charConn, deathConn
 local orbitAngle = 0
+local isFlinging = false
+local VOID_Y = -60 -- adjust if game has deep maps
 
--- === Target Utilities ===
-local function getTargetHRP(player)
-	if not player then return nil end
-	local char = player.Character
-	if not char then return nil end
-	return char:FindFirstChild("HumanoidRootPart")
+-- === Utilities ===
+local function getHRP(char)
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHumanoid(char)
+	return char and char:FindFirstChildOfClass("Humanoid")
 end
 
 local function isTargetValid(player)
-	if not player then return false end
-	local char = player.Character
-	if not char then return false end
-
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-
+	if not player or not player.Character then return false end
+	local hum = getHumanoid(player.Character)
+	local hrp = getHRP(player.Character)
 	return hum and hum.Health > 0 and hrp and hrp:IsDescendantOf(workspace)
 end
 
 local function getNearestPlayer()
 	local myChar = LocalPlayer.Character
-	if not myChar then return nil end
-	local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+	local myHRP = getHRP(myChar)
 	if not myHRP then return nil end
 
-	local closest, minDist = nil, math.huge
+	local best, dist = nil, math.huge
 	for _, plr in ipairs(Players:GetPlayers()) do
 		if plr ~= LocalPlayer and isTargetValid(plr) then
-			local hrp = getTargetHRP(plr)
+			local hrp = getHRP(plr.Character)
 			local d = (hrp.Position - myHRP.Position).Magnitude
-			if d < minDist then
-				minDist = d
-				closest = plr
+			if d < dist then
+				dist = d
+				best = plr
 			end
 		end
 	end
-	return closest
+	return best
 end
 
--- === Start Fling ===
+-- === CLEAN STOP ===
+local function stopFling()
+	if flingConn then flingConn:Disconnect() flingConn = nil end
+	if charConn then charConn:Disconnect() charConn = nil end
+	if deathConn then deathConn:Disconnect() deathConn = nil end
+	if cameraConn then cameraConn:Disconnect() cameraConn = nil end
+
+	isFlinging = false
+	orbitAngle = 0
+
+	if LocalPlayer.Character then
+		local hum = getHumanoid(LocalPlayer.Character)
+		if hum then Camera.CameraSubject = hum end
+	end
+end
+
+-- === START / RESUME ===
 local function startFling()
 	if not selectedPlayer then
 		statusLabel.Text = "Status: No player selected"
 		return
 	end
 
+	stopFling()
+	isFlinging = true
+
 	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	local hrp = char:WaitForChild("HumanoidRootPart")
+	local hum = getHumanoid(char)
 	orbitAngle = 0
 
 	statusLabel.Text = "Status: Flinging " .. selectedPlayer.Name
 
-	-- Camera Lock
+	-- === HANDLE DEATH ===
+	deathConn = hum.Died:Connect(function()
+		statusLabel.Text = "Status: Respawning..."
+		stopFling()
+
+		task.spawn(function()
+			local newChar = LocalPlayer.CharacterAdded:Wait()
+			task.wait(0.3)
+			if isFlinging == false then
+				startFling() -- auto resume
+			end
+		end)
+	end)
+
+	-- === CAMERA LOCK ===
 	if cameraLock then
 		cameraConn = RunService.RenderStepped:Connect(function()
-			local targetHRP = getTargetHRP(selectedPlayer)
-			if targetHRP then
-				Camera.CameraSubject = targetHRP
-				Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHRP.Position)
+			if isTargetValid(selectedPlayer) then
+				local tHRP = getHRP(selectedPlayer.Character)
+				if tHRP then
+					Camera.CameraSubject = tHRP
+					Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHRP.Position)
+				end
 			end
 		end)
 	end
 
-	-- Respawn Re-lock
-	selectedPlayer.CharacterAdded:Connect(function()
-		task.wait(0.25)
-		statusLabel.Text = "Status: Re-locking target"
-	end)
-
+	-- === FLING LOOP ===
 	flingConn = RunService.Heartbeat:Connect(function(dt)
+		if not isFlinging then return end
+
 		-- Validate / fallback
 		if not isTargetValid(selectedPlayer) then
 			selectedPlayer = getNearestPlayer()
@@ -82,18 +113,17 @@ local function startFling()
 				statusLabel.Text = "Status: No valid targets"
 				return
 			end
-			statusLabel.Text = "Status: Switched to " .. selectedPlayer.Name
 		end
 
-		local targetHRP = getTargetHRP(selectedPlayer)
+		local targetHRP = getHRP(selectedPlayer.Character)
 		if not targetHRP then return end
 
 		-- Orbit math
 		local speed = tonumber(speedSlider.Text) or 1500
 		orbitAngle += math.rad(speed) * dt
 
-		-- Predict movement
-		local predictedPos = targetHRP.Position + (targetHRP.AssemblyLinearVelocity * 0.12)
+		-- Predict
+		local predicted = targetHRP.Position + targetHRP.AssemblyLinearVelocity * 0.12
 
 		local radius = 5
 		local offset = Vector3.new(
@@ -102,37 +132,40 @@ local function startFling()
 			math.sin(orbitAngle) * radius
 		)
 
-		local desiredCFrame = CFrame.new(predictedPos + offset)
-		char:PivotTo(desiredCFrame)
-
-		-- Force fling physics
-		hrp.AssemblyAngularVelocity = Vector3.new(9999, 9999, 9999)
-		hrp.AssemblyLinearVelocity =
-			(predictedPos - hrp.Position).Unit * 220
-
-		-- Drift correction
-		local dist = (targetHRP.Position - hrp.Position).Magnitude
-		if dist > 25 then
-			hrp.CFrame = CFrame.new(predictedPos + offset)
+		-- === ANTI-VOID ===
+		if hrp.Position.Y < VOID_Y then
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			hrp.CFrame = CFrame.new(predicted + Vector3.new(0, 12, 0))
+			return
 		end
 
-		-- UI updates
+		-- Move
+		char:PivotTo(CFrame.new(predicted + offset))
+		hrp.AssemblyAngularVelocity = Vector3.new(9999, 9999, 9999)
+		hrp.AssemblyLinearVelocity = (predicted - hrp.Position).Unit * 220
+
+		-- Drift clamp
+		local dist = (targetHRP.Position - hrp.Position).Magnitude
+		if dist > 25 then
+			hrp.CFrame = CFrame.new(predicted + offset)
+		end
+
 		detailsLabel.Text = string.format("Distance: %.1f studs", dist)
 	end)
 
-	charConn = LocalPlayer.CharacterAdded:Connect(startFling)
+	charConn = LocalPlayer.CharacterAdded:Connect(function()
+		if isFlinging then
+			task.wait(0.3)
+			startFling()
+		end
+	end)
 end
 
--- === Toggle Button ===
+-- === TOGGLE ===
 toggleBtn.MouseButton1Click:Connect(function()
-	if flingConn then
-		flingConn:Disconnect()
-		flingConn = nil
-
-		if charConn then charConn:Disconnect() end
-		if cameraConn then cameraConn:Disconnect() cameraConn = nil end
-
-		Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
+	if isFlinging then
+		stopFling()
 		statusLabel.Text = "Status: Stopped"
 		detailsLabel.Text = "Distance: N/A"
 		toggleBtn.Text = "Start Fling"
