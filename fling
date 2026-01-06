@@ -1,176 +1,311 @@
---- =========================
--- SMART FLING LOGIC v2 (ANTI-DEATH + ANTI-VOID)
--- =========================
+-- StarterPlayerScripts: LocalScript
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local flingConn, charConn, deathConn
-local orbitAngle = 0
-local isFlinging = false
-local VOID_Y = -60 -- adjust if game has deep maps
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
 
--- === Utilities ===
-local function getHRP(char)
-	return char and char:FindFirstChild("HumanoidRootPart")
-end
+local TargetingModule = require(ReplicatedStorage:WaitForChild("TargetingModule"))
 
-local function getHumanoid(char)
-	return char and char:FindFirstChildOfClass("Humanoid")
-end
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui", PlayerGui)
+screenGui.Name = "FlingOrbitGUI"
+screenGui.ResetOnSpawn = false
 
-local function isTargetValid(player)
-	if not player or not player.Character then return false end
-	local hum = getHumanoid(player.Character)
-	local hrp = getHRP(player.Character)
-	return hum and hum.Health > 0 and hrp and hrp:IsDescendantOf(workspace)
-end
+local mainFrame = Instance.new("Frame", screenGui)
+mainFrame.Size = UDim2.new(0, 260, 0, 360)
+mainFrame.Position = UDim2.new(0, 10, 0.4, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
 
-local function getNearestPlayer()
-	local myChar = LocalPlayer.Character
-	local myHRP = getHRP(myChar)
-	if not myHRP then return nil end
+local toggleBtn = Instance.new("TextButton", mainFrame)
+toggleBtn.Size = UDim2.new(1, -20, 0, 40)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+toggleBtn.Text = "Start Fling"
+toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 16
 
-	local best, dist = nil, math.huge
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer and isTargetValid(plr) then
-			local hrp = getHRP(plr.Character)
-			local d = (hrp.Position - myHRP.Position).Magnitude
-			if d < dist then
-				dist = d
-				best = plr
+local dropdownLabel = Instance.new("TextLabel", mainFrame)
+dropdownLabel.Size = UDim2.new(1, -20, 0, 20)
+dropdownLabel.Position = UDim2.new(0, 10, 0, 60)
+dropdownLabel.Text = "Select Player:"
+dropdownLabel.TextColor3 = Color3.new(1, 1, 1)
+dropdownLabel.BackgroundTransparency = 1
+dropdownLabel.Font = Enum.Font.SourceSans
+dropdownLabel.TextSize = 14
+dropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local playerDropdown = Instance.new("TextButton", mainFrame)
+playerDropdown.Size = UDim2.new(1, -20, 0, 30)
+playerDropdown.Position = UDim2.new(0, 10, 0, 85)
+playerDropdown.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+playerDropdown.Text = "Select Player"
+playerDropdown.TextColor3 = Color3.new(1, 1, 1)
+playerDropdown.Font = Enum.Font.SourceSans
+playerDropdown.TextSize = 14
+
+local dropdownFrame = Instance.new("ScrollingFrame", mainFrame)
+dropdownFrame.Size = UDim2.new(1, -20, 0, 80)
+dropdownFrame.Position = UDim2.new(0, 10, 0, 115)
+dropdownFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+dropdownFrame.Visible = false
+dropdownFrame.ScrollBarThickness = 6
+dropdownFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+dropdownFrame.ClipsDescendants = true
+
+local layout = Instance.new("UIListLayout", dropdownFrame)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding = UDim.new(0, 2)
+
+local autoRefreshToggle = Instance.new("TextButton", mainFrame)
+autoRefreshToggle.Size = UDim2.new(1, -20, 0, 20)
+autoRefreshToggle.Position = UDim2.new(0, 10, 0, 200)
+autoRefreshToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+autoRefreshToggle.Text = "Auto Refresh: ON"
+autoRefreshToggle.TextColor3 = Color3.new(1, 1, 1)
+autoRefreshToggle.Font = Enum.Font.SourceSans
+autoRefreshToggle.TextSize = 14
+
+local speedSlider = Instance.new("TextBox", mainFrame)
+speedSlider.Size = UDim2.new(1, -20, 0, 20)
+speedSlider.Position = UDim2.new(0, 10, 0, 225)
+speedSlider.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+speedSlider.Text = "1500"
+speedSlider.TextColor3 = Color3.new(1, 1, 1)
+speedSlider.Font = Enum.Font.SourceSans
+speedSlider.TextSize = 14
+speedSlider.ClearTextOnFocus = false
+
+local statusLabel = Instance.new("TextLabel", mainFrame)
+statusLabel.Size = UDim2.new(1, -20, 0, 20)
+statusLabel.Position = UDim2.new(0, 10, 0, 250)
+statusLabel.Text = "Status: Idle"
+statusLabel.TextColor3 = Color3.new(1, 1, 1)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.TextSize = 14
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local detailsLabel = Instance.new("TextLabel", mainFrame)
+detailsLabel.Size = UDim2.new(1, -20, 0, 20)
+detailsLabel.Position = UDim2.new(0, 10, 0, 270)
+detailsLabel.Text = "Distance: N/A"
+detailsLabel.TextColor3 = Color3.new(1, 1, 1)
+detailsLabel.BackgroundTransparency = 1
+detailsLabel.Font = Enum.Font.SourceSans
+detailsLabel.TextSize = 14
+detailsLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local cameraLockToggle = Instance.new("TextButton", mainFrame)
+cameraLockToggle.Size = UDim2.new(1, -20, 0, 20)
+cameraLockToggle.Position = UDim2.new(0, 10, 0, 290)
+cameraLockToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+cameraLockToggle.Text = "Camera Lock: OFF"
+cameraLockToggle.TextColor3 = Color3.new(1, 1, 1)
+cameraLockToggle.Font = Enum.Font.SourceSans
+cameraLockToggle.TextSize = 14
+
+local resetBtn = Instance.new("TextButton", mainFrame)
+resetBtn.Size = UDim2.new(1, -20, 0, 20)
+resetBtn.Position = UDim2.new(0, 10, 0, 315)
+resetBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+resetBtn.Text = "Reset"
+resetBtn.TextColor3 = Color3.new(1, 1, 1)
+resetBtn.Font = Enum.Font.SourceSansBold
+resetBtn.TextSize = 14
+
+-- Dragging GUI
+local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
+mainFrame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
 			end
+		end)
+	end
+end)
+mainFrame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		dragInput = input
+	end
+end)
+RunService.RenderStepped:Connect(function()
+	if dragging and dragInput then
+		local delta = dragInput.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+-- Targeting System
+local selectedPlayer = nil
+local function refreshDropdown()
+	for _, child in ipairs(dropdownFrame:GetChildren()) do
+		if child:IsA("TextButton") then child:Destroy() end
+	end
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 0, 24)
+			btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+			btn.Text = player.Name
+			btn.TextColor3 = Color3.new(1, 1, 1)
+			btn.Font = Enum.Font.SourceSans
+			btn.TextSize = 14
+			btn.Parent = dropdownFrame
+			btn.MouseButton1Click:Connect(function()
+				selectedPlayer = player
+				playerDropdown.Text = "Target: " .. player.Name
+				dropdownFrame.Visible = false
+			end)
 		end
 	end
-	return best
+	dropdownFrame.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y)
 end
 
--- === CLEAN STOP ===
-local function stopFling()
-	if flingConn then flingConn:Disconnect() flingConn = nil end
-	if charConn then charConn:Disconnect() charConn = nil end
-	if deathConn then deathConn:Disconnect() deathConn = nil end
-	if cameraConn then cameraConn:Disconnect() cameraConn = nil end
+playerDropdown.MouseButton1Click:Connect(function()
+	dropdownFrame.Visible = not dropdownFrame.Visible
+end)
 
-	isFlinging = false
-	orbitAngle = 0
+local autoRefresh = true
+autoRefreshToggle.MouseButton1Click:Connect(function()
+	autoRefresh = not autoRefresh
+	autoRefreshToggle.Text = "Auto Refresh: " .. (autoRefresh and "ON" or "OFF")
+end)
+if autoRefresh then
+	Players.PlayerAdded:Connect(refreshDropdown)
+	Players.PlayerRemoving:Connect(refreshDropdown)
+end
+refreshDropdown()
+selectedPlayer = TargetingModule.GetNearestPlayer(LocalPlayer)
+if selectedPlayer then
+	playerDropdown.Text = "Target: " .. selectedPlayer.Name
+end
 
-	if LocalPlayer.Character then
-		local hum = getHumanoid(LocalPlayer.Character)
-		if hum then Camera.CameraSubject = hum end
+-- Fling System
+local cameraConn, flingConn, charConn
+local cameraLock = false
+local orbitAngle = 0
+
+cameraLockToggle.MouseButton1Click:Connect(function()
+	cameraLock = not cameraLock
+	cameraLockToggle.Text = "Camera Lock: " .. (cameraLock and "ON" or "OFF")
+	if not cameraLock and cameraConn then
+		cameraConn:Disconnect()
+		cameraConn = nil
+		Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
 	end
-end
+end)
 
--- === START / RESUME ===
 local function startFling()
-	if not selectedPlayer then
-		statusLabel.Text = "Status: No player selected"
-		return
-	end
-
-	stopFling()
-	isFlinging = true
+	if not selectedPlayer then return end
+	statusLabel.Text = "Status: Flinging " .. selectedPlayer.Name
 
 	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	local hrp = char:WaitForChild("HumanoidRootPart")
-	local hum = getHumanoid(char)
-	orbitAngle = 0
 
-	statusLabel.Text = "Status: Flinging " .. selectedPlayer.Name
-
-	-- === HANDLE DEATH ===
-	deathConn = hum.Died:Connect(function()
-		statusLabel.Text = "Status: Respawning..."
-		stopFling()
-
-		task.spawn(function()
-			local newChar = LocalPlayer.CharacterAdded:Wait()
-			task.wait(0.3)
-			if isFlinging == false then
-				startFling() -- auto resume
-			end
-		end)
-	end)
-
-	-- === CAMERA LOCK ===
 	if cameraLock then
 		cameraConn = RunService.RenderStepped:Connect(function()
-			if isTargetValid(selectedPlayer) then
-				local tHRP = getHRP(selectedPlayer.Character)
-				if tHRP then
-					Camera.CameraSubject = tHRP
-					Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHRP.Position)
-				end
+			local targetHRP = TargetingModule.GetValidTarget(selectedPlayer)
+			if targetHRP then
+				Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetHRP.Position), 0.2)
+				Camera.CameraSubject = targetHRP
 			end
 		end)
 	end
 
-	-- === FLING LOOP ===
 	flingConn = RunService.Heartbeat:Connect(function(dt)
-		if not isFlinging then return end
+		orbitAngle += dt * (tonumber(speedSlider.Text) or 1500) * 0.01
 
-		-- Validate / fallback
-		if not isTargetValid(selectedPlayer) then
-			selectedPlayer = getNearestPlayer()
-			if not selectedPlayer then
-				statusLabel.Text = "Status: No valid targets"
-				return
-			end
-		end
-
-		local targetHRP = getHRP(selectedPlayer.Character)
+		local targetHRP = TargetingModule.GetValidTarget(selectedPlayer)
 		if not targetHRP then return end
 
-		-- Orbit math
-		local speed = tonumber(speedSlider.Text) or 1500
-		orbitAngle += math.rad(speed) * dt
+		local predictedPos = TargetingModule.GetPredictedPosition(targetHRP, 0.15)
+		local distance = (predictedPos - hrp.Position).Magnitude
+		local radius = math.clamp(distance * 0.3, 3, 10)
 
-		-- Predict
-		local predicted = targetHRP.Position + targetHRP.AssemblyLinearVelocity * 0.12
+		local offset = Vector3.new(math.cos(orbitAngle), 0, math.sin(orbitAngle)) * radius
+		local newCFrame = CFrame.new(predictedPos + offset) * CFrame.Angles(orbitAngle, orbitAngle, orbitAngle)
+		char:PivotTo(newCFrame)
 
-		local radius = 5
-		local offset = Vector3.new(
-			math.cos(orbitAngle) * radius,
-			0,
-			math.sin(orbitAngle) * radius
-		)
-
-		-- === ANTI-VOID ===
-		if hrp.Position.Y < VOID_Y then
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			hrp.AssemblyAngularVelocity = Vector3.zero
-			hrp.CFrame = CFrame.new(predicted + Vector3.new(0, 12, 0))
-			return
-		end
-
-		-- Move
-		char:PivotTo(CFrame.new(predicted + offset))
+		local desiredVelocity = (predictedPos - hrp.Position).Unit * 220
+		hrp.AssemblyLinearVelocity = hrp.AssemblyLinearVelocity:Lerp(desiredVelocity, 0.35)
 		hrp.AssemblyAngularVelocity = Vector3.new(9999, 9999, 9999)
-		hrp.AssemblyLinearVelocity = (predicted - hrp.Position).Unit * 220
-
-		-- Drift clamp
-		local dist = (targetHRP.Position - hrp.Position).Magnitude
-		if dist > 25 then
-			hrp.CFrame = CFrame.new(predicted + offset)
-		end
-
-		detailsLabel.Text = string.format("Distance: %.1f studs", dist)
+		detailsLabel.Text = string.format("Distance: %.1f studs", distance)
 	end)
 
-	charConn = LocalPlayer.CharacterAdded:Connect(function()
-		if isFlinging then
-			task.wait(0.3)
-			startFling()
-		end
-	end)
+	charConn = LocalPlayer.CharacterAdded:Connect(startFling)
 end
 
--- === TOGGLE ===
 toggleBtn.MouseButton1Click:Connect(function()
-	if isFlinging then
-		stopFling()
+	if flingConn then
+		flingConn:Disconnect()
+		flingConn = nil
+		if cameraConn then cameraConn:Disconnect() cameraConn = nil end
+		if charConn then charConn:Disconnect() end
+		Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
 		statusLabel.Text = "Status: Stopped"
 		detailsLabel.Text = "Distance: N/A"
 		toggleBtn.Text = "Start Fling"
 	else
 		startFling()
 		toggleBtn.Text = "Stop Fling"
+	end
+end)
+
+resetBtn.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end)
+
+-- Click-to-target
+UserInputService.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+		local mouse = LocalPlayer:GetMouse()
+		local target = mouse.Target
+		if not target then return end
+		local model = target:FindFirstAncestorOfClass("Model")
+		local player = Players:GetPlayerFromCharacter(model)
+		if player and player ~= LocalPlayer then
+			selectedPlayer = player
+			playerDropdown.Text = "Target: " .. player.Name
+			statusLabel.Text = "Status: Selected via click"
+		end
+	end
+end)
+
+-- Arrow Key Switching
+local function switchTarget(direction)
+	local all = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and TargetingModule.GetValidTarget(plr) then
+			table.insert(all, plr)
+		end
+	end
+
+	table.sort(all, function(a, b)
+		return a.Name < b.Name
+	end)
+
+	if #all == 0 then return end
+	local currentIndex = table.find(all, selectedPlayer) or 0
+	local nextIndex = (currentIndex + direction - 1) % #all + 1
+	selectedPlayer = all[nextIndex]
+	playerDropdown.Text = "Target: " .. selectedPlayer.Name
+	statusLabel.Text = "Status: Switched target"
+end
+
+UserInputService.InputBegan:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.Right then
+		switchTarget(1)
+	elseif input.KeyCode == Enum.KeyCode.Left then
+		switchTarget(-1)
 	end
 end)
