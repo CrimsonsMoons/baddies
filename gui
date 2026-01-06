@@ -123,20 +123,22 @@ UIS.InputBegan:Connect(function(input, gp)
 	end
 end)
 
---// MAIN BOT LOOP
+--// MAIN BOT LOOP (CONTINUOUS)
 task.spawn(function()
 	while true do
-		task.wait(0.15)
+		task.wait(0.1)
 		if not enabled then continue end
 
-		local myHRP = getHRP(LocalPlayer.Character)
+		local myChar = LocalPlayer.Character
+		local myHRP = getHRP(myChar)
 		if not myHRP then continue end
 
 		local targets = {}
 
+		-- TARGET SELECTION
 		if mode == "All" then
 			for _, p in ipairs(Players:GetPlayers()) do
-				if p ~= LocalPlayer and isAlive(p) then
+				if p ~= LocalPlayer then
 					table.insert(targets, p)
 				end
 			end
@@ -145,59 +147,66 @@ task.spawn(function()
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p ~= LocalPlayer and isAlive(p) then
 					local hrp = getHRP(p.Character)
-					local d = (hrp.Position - myHRP.Position).Magnitude
-					if d < dist then
-						closest, dist = p, d
+					if hrp then
+						local d = (hrp.Position - myHRP.Position).Magnitude
+						if d < dist then
+							closest, dist = p, d
+						end
 					end
 				end
 			end
 			if closest then table.insert(targets, closest) end
 		else
-			local target = Players:FindFirstChild(mode)
-			if target and isAlive(target) then
-				table.insert(targets, target)
-			end
+			local p = Players:FindFirstChild(mode)
+			if p then table.insert(targets, p) end
 		end
 
+		-- 🔴 CONTINUOUS TARGET LOOP
 		for _, plr in ipairs(targets) do
 			if not enabled then break end
+			if not plr:IsDescendantOf(game) then continue end
 
-			local char = plr.Character
-			local hum = getHum(char)
-			local hrp = getHRP(char)
-			if not hum or not hrp then continue end
+			updateStatus("Locking: " .. plr.Name)
 
-			updateStatus("Attacking: " .. plr.Name)
+			while enabled and plr:IsDescendantOf(game) do
+				local char = plr.Character
+				local hum = getHum(char)
+				local hrp = getHRP(char)
 
-			while isAlive(plr) and hum.Health > STOMP_HP and enabled do
-				myHRP.CFrame = CFrame.new(
-					hrp.Position - hrp.CFrame.LookVector * FOLLOW_DISTANCE,
-					hrp.Position
-				)
-				hit(hrp)
-				task.wait(HIT_DELAY)
-			end
+				-- WAIT FOR CHARACTER (RESPAWN SAFE)
+				if not hum or not hrp then
+					task.wait(0.1)
+					continue
+				end
 
-			if isAlive(plr) and hum.Health <= STOMP_HP and enabled then
-				local oldChar = char
-				while plr.Character == oldChar and enabled do
-					local stompHRP = getHRP(plr.Character)
-					if stompHRP then
-						myHRP.CFrame = stompHRP.CFrame
-					end
+				-- 👊 ATTACK PHASE (ALWAYS FOLLOW)
+				while enabled and hum.Health > STOMP_HP do
+					myHRP.CFrame = CFrame.new(
+						hrp.Position - hrp.CFrame.LookVector * FOLLOW_DISTANCE,
+						hrp.Position
+					)
+					hit(hrp)
+					task.wait(HIT_DELAY)
+				end
 
+				-- 🦶 STOMP PHASE (STAY GLUED)
+				while enabled and hum.Health <= STOMP_HP and hum.Health > 0 do
+					myHRP.CFrame = hrp.CFrame
 					for _ = 1, STOMP_REPEAT do
 						stomp()
 						task.wait(STOMP_DELAY)
 					end
-
-					task.wait(0.1)
+					task.wait(0.05)
 				end
-				killCount += 1
-				killLabel.Text = "Kills: " .. tostring(killCount)
-			end
 
-			updateStatus("Searching...")
+				-- 💀 WAIT FOR RESPAWN THEN LOOP AGAIN
+				if hum.Health <= 0 then
+					local oldChar = char
+					repeat
+						task.wait(0.1)
+					until plr.Character ~= oldChar or not plr:IsDescendantOf(game)
+				end
+			end
 		end
 	end
 end)
