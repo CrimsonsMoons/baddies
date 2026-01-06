@@ -1,4 +1,4 @@
--- Super Fling GUI (Advanced Prediction + Persistent Target)
+--- Super Fling GUI (Advanced Prediction + Persistent Target)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
