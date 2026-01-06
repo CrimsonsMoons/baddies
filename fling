@@ -1,4 +1,4 @@
--- Super Fling GUI with Camera Lock, Ultra Fast Orbit, Target Details, 2s Prediction
+--- Super Fling GUI with Camera Lock, Ultra Fast Orbit, Target Details, 2s Prediction
 
 -- SERVICES
 local Players = game:GetService("Players")
