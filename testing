@@ -1,6 +1,4 @@
---====================================================
--- SERVICES
---====================================================
+--=== SERVICES ===--
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
@@ -9,9 +7,7 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Remote = RS:WaitForChild("Event", 9e9)
 
---====================================================
--- SETTINGS
---====================================================
+--=== SETTINGS ===--
 local FOLLOW_DISTANCE = 2
 local FOLLOW_THRESHOLD = 1
 local HIT_DELAY = 0.1
@@ -19,17 +15,24 @@ local STOMP_DELAY = 0.05
 local STOMP_REPEAT = 5
 local STOMP_HP = 1
 
---====================================================
--- STATE
---====================================================
+--=== STATE ===--
 local enabled = false
-local mode = "All" -- All | Nearest | PlayerName
+local mode = "All"
+local followStyle = "Behind"
 local kills = 0
 local currentTarget = nil
 
---====================================================
--- UTILS
---====================================================
+--=== POSITION OFFSETS ===--
+local positionOffsets = {
+	["Behind"] = Vector3.new(0, 0, -FOLLOW_DISTANCE),
+	["Front"]  = Vector3.new(0, 0, FOLLOW_DISTANCE),
+	["Left"]   = Vector3.new(-FOLLOW_DISTANCE, 0, 0),
+	["Right"]  = Vector3.new(FOLLOW_DISTANCE, 0, 0),
+	["Above"]  = Vector3.new(0, FOLLOW_DISTANCE * 2, 0),
+	["Below"]  = Vector3.new(0, -FOLLOW_DISTANCE * 2, 0)
+}
+
+--=== UTILITIES ===--
 local function getHRP(char)
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
@@ -46,38 +49,28 @@ local function alive(plr)
 	return hum and hrp and hum.Health > 0
 end
 
---====================================================
--- SMART TELEPORT FOLLOW (CORE IMPROVEMENT)
---====================================================
 local function smartFollow(myHRP, targetHRP)
 	myHRP.AssemblyLinearVelocity = Vector3.zero
 	myHRP.AssemblyAngularVelocity = Vector3.zero
 
-	local behindPos =
-		targetHRP.Position - targetHRP.CFrame.LookVector * FOLLOW_DISTANCE
+	local offset = positionOffsets[followStyle] or Vector3.new(0, 0, -FOLLOW_DISTANCE)
+	local worldOffset = targetHRP.CFrame:VectorToWorldSpace(offset)
+	local goal = targetHRP.Position + worldOffset
 
-	if (myHRP.Position - behindPos).Magnitude > FOLLOW_THRESHOLD then
-		myHRP.CFrame = CFrame.new(behindPos, targetHRP.Position)
+	if (myHRP.Position - goal).Magnitude > FOLLOW_THRESHOLD then
+		myHRP.CFrame = CFrame.new(goal, targetHRP.Position)
 	end
 end
 
---====================================================
--- REMOTES
---====================================================
 local function hit(part)
-	Remote:FireServer({
-		Event = "Hit",
-		ClientHitbox = { part }
-	})
+	Remote:FireServer({ Event = "Hit", ClientHitbox = { part } })
 end
 
 local function stomp()
 	Remote:FireServer({ Event = "Stomp" })
 end
 
---====================================================
--- GUI
---====================================================
+--=== GUI ===--
 local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 gui.Name = "SmartBotGUI"
 gui.ResetOnSpawn = false
@@ -112,16 +105,27 @@ targetBtn.Font = Enum.Font.SourceSans
 targetBtn.TextScaled = true
 targetBtn.Text = "Target: All"
 
-local statusLabel = makeLabel("Status: Idle", 160)
-local killLabel = makeLabel("Kills: 0", 190)
+local posBtn = Instance.new("TextButton", gui)
+posBtn.Size = UDim2.new(0, 180, 0, 30)
+posBtn.Position = UDim2.new(0, 20, 0, 160)
+posBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+posBtn.TextColor3 = Color3.fromRGB(255,255,255)
+posBtn.Font = Enum.Font.SourceSans
+posBtn.TextScaled = true
+posBtn.Text = "Position: Behind"
+
+local statusLabel = makeLabel("Status: Idle", 200)
+local killLabel = makeLabel("Kills: 0", 230)
 
 local function updateGUI()
 	toggleBtn.Text = enabled and "AUTO: ON" or "AUTO: OFF"
 	toggleBtn.BackgroundColor3 = enabled and Color3.fromRGB(0,140,0) or Color3.fromRGB(35,35,35)
 	targetBtn.Text = "Target: " .. mode
+	posBtn.Text = "Position: " .. followStyle
 	killLabel.Text = "Kills: " .. kills
 end
 
+--=== BUTTON EVENTS ===--
 toggleBtn.MouseButton1Click:Connect(function()
 	enabled = not enabled
 	updateGUI()
@@ -145,18 +149,25 @@ targetBtn.MouseButton1Click:Connect(function()
 	updateGUI()
 end)
 
---====================================================
--- TARGET SELECTION
---====================================================
+posBtn.MouseButton1Click:Connect(function()
+	local styles = { "Behind", "Front", "Left", "Right", "Above", "Below" }
+	local idx = table.find(styles, followStyle) or 1
+	followStyle = styles[(idx % #styles) + 1]
+	updateGUI()
+end)
+
+--=== TARGETING LOGIC ===--
 local function getTarget(myHRP)
 	if mode == "Nearest" then
 		local best, dist = nil, math.huge
 		for _,p in ipairs(Players:GetPlayers()) do
 			if p ~= LocalPlayer and alive(p) then
 				local hrp = getHRP(p.Character)
-				local d = (hrp.Position - myHRP.Position).Magnitude
-				if d < dist then
-					best, dist = p, d
+				if hrp then
+					local d = (hrp.Position - myHRP.Position).Magnitude
+					if d < dist then
+						best, dist = p, d
+					end
 				end
 			end
 		end
@@ -172,9 +183,7 @@ local function getTarget(myHRP)
 	end
 end
 
---====================================================
--- MAIN LOOP (NEVER STOPS)
---====================================================
+--=== MAIN LOOP ===--
 task.spawn(function()
 	while true do
 		RunService.Heartbeat:Wait()
@@ -200,14 +209,14 @@ task.spawn(function()
 				continue
 			end
 
-			-- ATTACK PHASE
+			-- 🔁 ATTACK LOOP
 			while enabled and hum.Health > STOMP_HP do
 				smartFollow(myHRP, hrp)
 				hit(hrp)
 				task.wait(HIT_DELAY)
 			end
 
-			-- STOMP PHASE
+			-- 🦶 STOMP LOOP
 			while enabled and hum.Health <= STOMP_HP and hum.Health > 0 do
 				myHRP.CFrame = hrp.CFrame
 				for _ = 1, STOMP_REPEAT do
@@ -216,7 +225,7 @@ task.spawn(function()
 				end
 			end
 
-			-- WAIT FOR RESPAWN
+			-- 💀 WAIT FOR RESPAWN
 			if hum.Health <= 0 then
 				local oldChar = char
 				repeat task.wait(0.1)
