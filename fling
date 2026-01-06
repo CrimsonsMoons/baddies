@@ -1,16 +1,16 @@
---- Rocket Fling GUI (Front-Biased, All-Sides, Persistent Target)
+-- TRUE ROCKET FLING (Lock → Orbit)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- GUI
+-- ================= GUI =================
 local gui = Instance.new("ScreenGui", PlayerGui)
-gui.Name = "RocketFlingGUI"
+gui.Name = "TrueRocketFling"
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0,260,0,320)
+frame.Size = UDim2.new(0,260,0,300)
 frame.Position = UDim2.new(0,10,0.4,0)
 frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
 Instance.new("UICorner", frame)
@@ -24,31 +24,15 @@ toggle.TextColor3 = Color3.new(1,1,1)
 toggle.Font = Enum.Font.SourceSansBold
 toggle.TextSize = 16
 
-local dropdownBtn = Instance.new("TextButton", frame)
-dropdownBtn.Size = UDim2.new(1,-20,0,30)
-dropdownBtn.Position = UDim2.new(0,10,0,60)
-dropdownBtn.Text = "Select Player"
-dropdownBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-dropdownBtn.TextColor3 = Color3.new(1,1,1)
-
-local dropdown = Instance.new("ScrollingFrame", frame)
-dropdown.Size = UDim2.new(1,-20,0,90)
-dropdown.Position = UDim2.new(0,10,0,95)
-dropdown.Visible = false
-dropdown.ScrollBarThickness = 6
-Instance.new("UIListLayout", dropdown)
-
 local status = Instance.new("TextLabel", frame)
 status.Size = UDim2.new(1,-20,0,20)
-status.Position = UDim2.new(0,10,0,200)
+status.Position = UDim2.new(0,10,0,60)
 status.Text = "Status: Idle"
 status.TextColor3 = Color3.new(1,1,1)
 status.BackgroundTransparency = 1
 status.TextXAlignment = Enum.TextXAlignment.Left
 
--- =========================
--- TARGET TRACKING (PERSIST)
--- =========================
+-- ================= TARGET TRACK =================
 local selectedPlayer
 local selectedUserId
 local trackedHRP
@@ -71,7 +55,7 @@ local function trackPlayer(player)
 	end
 
 	charConn = player.CharacterAdded:Connect(function(char)
-		task.wait(0.1)
+		task.wait(0.05)
 		hookCharacter(char)
 	end)
 end
@@ -79,47 +63,13 @@ end
 Players.PlayerAdded:Connect(function(p)
 	if selectedUserId and p.UserId == selectedUserId then
 		trackPlayer(p)
-		dropdownBtn.Text = "Target: "..p.Name
 		status.Text = "Status: Target Rejoined"
 	end
 end)
 
--- =========================
--- DROPDOWN
--- =========================
-dropdownBtn.MouseButton1Click:Connect(function()
-	dropdown.Visible = not dropdown.Visible
-end)
-
-local function refresh()
-	for _,c in ipairs(dropdown:GetChildren()) do
-		if c:IsA("TextButton") then c:Destroy() end
-	end
-	for _,p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer then
-			local b = Instance.new("TextButton", dropdown)
-			b.Size = UDim2.new(1,0,0,24)
-			b.Text = p.Name
-			b.BackgroundColor3 = Color3.fromRGB(60,60,60)
-			b.TextColor3 = Color3.new(1,1,1)
-			b.MouseButton1Click:Connect(function()
-				dropdownBtn.Text = "Target: "..p.Name
-				trackPlayer(p)
-				dropdown.Visible = false
-			end)
-		end
-	end
-end
-
-refresh()
-Players.PlayerAdded:Connect(refresh)
-Players.PlayerRemoving:Connect(refresh)
-
--- =========================
--- FLING (ROCKET FRONT MODE)
--- =========================
+-- ================= FLING =================
 local flingConn
-local attackTick = 0
+local ROCKET_DISTANCE = 12
 
 local function startFling()
 	if not selectedPlayer then
@@ -133,44 +83,36 @@ local function startFling()
 
 	flingConn = RunService.Heartbeat:Connect(function(dt)
 		if not trackedHRP then return end
-		attackTick += dt
 
-		-- ===== FRONT-BIASED MULTI-SIDE ATTACK =====
-		local look = trackedHRP.CFrame.LookVector
-		local right = trackedHRP.CFrame.RightVector
-
-		-- Front most of the time
-		local mode = attackTick % 1
-		local offsetDir
-
-		if mode < 0.55 then
-			offsetDir = -look                -- FRONT (main)
-		elseif mode < 0.75 then
-			offsetDir = right               -- SIDE
-		elseif mode < 0.95 then
-			offsetDir = -right              -- OTHER SIDE
-		else
-			offsetDir = Vector3.new(0,1,0)  -- ABOVE (brief)
-		end
-
-		local attackOffset = offsetDir * 5
-		char:PivotTo(CFrame.new(trackedHRP.Position + attackOffset))
-
-		hrp.AssemblyAngularVelocity = Vector3.new(9999,9999,9999)
-
-		-- ===== ROCKET IN (FAST APPROACH) =====
+		-- ===== TARGET PREDICTION =====
 		local targetPos = trackedHRP.Position
 		if lastTargetPos then
 			local vel = (targetPos - lastTargetPos) / dt
-			targetPos += vel * 0.2
+			targetPos += vel * 0.25 -- STRONG prediction
 		end
 		lastTargetPos = trackedHRP.Position
 
 		local dir = targetPos - hrp.Position
 		local dist = dir.Magnitude
-		if dist > 0 then
-			local rocketSpeed = math.clamp(300 + dist * 6, 300, 900)
-			hrp.AssemblyLinearVelocity = dir.Unit * rocketSpeed
+		if dist == 0 then return end
+
+		-- ===== PHASE 1: ROCKET LOCK =====
+		if dist > ROCKET_DISTANCE then
+			-- AIM THROUGH THE TARGET (overshoot)
+			local overshoot = dir.Unit * 3
+			char:PivotTo(CFrame.new(targetPos + overshoot))
+
+			local speed = math.clamp(400 + dist * 8, 400, 1200)
+			hrp.AssemblyLinearVelocity = dir.Unit * speed
+
+		-- ===== PHASE 2: ORBIT FLING =====
+		else
+			local angle = tick() * math.rad(1500)
+			local offset = Vector3.new(math.cos(angle)*5, 0, math.sin(angle)*5)
+			char:PivotTo(CFrame.new(trackedHRP.Position + offset))
+
+			hrp.AssemblyAngularVelocity = Vector3.new(9999,9999,9999)
+			hrp.AssemblyLinearVelocity = dir.Unit * 300
 		end
 	end)
 end
