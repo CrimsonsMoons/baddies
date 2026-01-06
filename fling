@@ -5,7 +5,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
--- === Inlined Targeting Module ===
+--- === Inlined Targeting Module ===
 local function GetValidTarget(player)
 	if not player or not player.Character then return nil end
 	local hrp = player.Character:FindFirstChild("HumanoidRootPart")
