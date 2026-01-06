@@ -1,89 +1,90 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local LocalPlayer = Players.LocalPlayer
 local Remote = ReplicatedStorage:WaitForChild("Event", 9e9)
 
----- SETTINGS
-local MY_HP_TRIGGER = 1            -- ONLY RUN WHEN YOU ARE 1 HP
-local STOMP_HP_TRIGGER = 1         -- stomp when enemy is 1 HP or less
-local HIT_DELAY = 0.1
-local STOMP_SPAM = 6
+-- Settings
+local HIT_DELAY = 0.12
 local STOMP_DELAY = 0.05
+local STOMP_REPEAT = 6
 local BEHIND_DISTANCE = 2
+local ENEMY_STOMP_HP = 1
 
--- Helpers
-local function hum(char)
-	return char and char:FindFirstChildOfClass("Humanoid")
-end
-
-local function hrp(char)
+-- Utility functions
+local function getHRP(char)
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
 
-local function hit(targetHRP)
+local function getHumanoid(char)
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function fireHit(hitPart)
 	Remote:FireServer({
 		Event = "Hit",
-		ClientHitbox = {
-			targetHRP
-		}
+		ClientHitbox = { hitPart }
 	})
 end
 
-local function stomp()
+local function fireStomp()
 	Remote:FireServer({
 		Event = "Stomp"
 	})
 end
 
+-- Main loop
 while true do
-	task.wait(0.15)
+	task.wait(0.2)
 
 	local myChar = LocalPlayer.Character
-	local myHum = hum(myChar)
-	local myHRP = hrp(myChar)
+	local myHRP = getHRP(myChar)
+	if not myHRP then continue end
 
-	-- ❌ DO NOTHING UNLESS YOU ARE 1 HP
-	if not myHum or not myHRP or myHum.Health > MY_HP_TRIGGER then
-		continue
-	end
+	local originalCFrame = myHRP.CFrame
+	local targetFound = false
 
-	local originalCF = myHRP.CFrame
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			local enemyChar = player.Character
+			local enemyHRP = getHRP(enemyChar)
+			local enemyHum = getHumanoid(enemyChar)
 
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer and plr.Character then
-			local tChar = plr.Character
-			local tHum = hum(tChar)
-			local tHRP = hrp(tChar)
+			if enemyHRP and enemyHum and enemyHum.Health > 0 then
+				-- Step 1: Teleport behind
+				myHRP.CFrame = CFrame.new(
+					enemyHRP.Position - enemyHRP.CFrame.LookVector * BEHIND_DISTANCE,
+					enemyHRP.Position
+				)
 
-			if tHum and tHRP and tHum.Health > 0 then
-
-				-- 🟢 ATTACK PHASE (enemy HP ABOVE 1)
-				while tHum.Health > STOMP_HP_TRIGGER
-					and myHum.Health <= MY_HP_TRIGGER do
-
-					-- TP BEHIND + FACE TARGET
-					myHRP.CFrame = CFrame.new(
-						tHRP.Position - tHRP.CFrame.LookVector * BEHIND_DISTANCE,
-						tHRP.Position
-					)
-
-					hit(tHRP)
+				-- Step 2: Hit while enemy HP > 1
+				while enemyHum and enemyHum.Health > ENEMY_STOMP_HP do
+					fireHit(enemyHRP)
 					task.wait(HIT_DELAY)
 				end
 
-				-- 🔴 STOMP PHASE (enemy HP ≤ 1)
-				if tHum.Health <= STOMP_HP_TRIGGER then
-					myHRP.CFrame = tHRP.CFrame
-					for i = 1, STOMP_SPAM do
-						stomp()
-						task.wait(STOMP_DELAY)
+				-- Step 3: Stomp when enemy HP <= 1
+				if enemyHum and enemyHum.Health <= ENEMY_STOMP_HP then
+					myHRP.CFrame = enemyHRP.CFrame
+
+					while enemyChar.Parent do
+						for i = 1, STOMP_REPEAT do
+							fireStomp()
+							task.wait(STOMP_DELAY)
+						end
+						task.wait(0.2)
 					end
+
+					-- Step 4: After they respawn, teleport back
+					myHRP.CFrame = originalCFrame
 				end
 
-				-- RETURN TO ORIGINAL POSITION
-				myHRP.CFrame = originalCF
+				targetFound = true
+				break -- only work on one player at a time
 			end
 		end
+	end
+
+	if not targetFound then
+		task.wait(0.5)
 	end
 end
