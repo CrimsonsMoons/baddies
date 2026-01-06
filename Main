@@ -3,7 +3,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Remote = RS:WaitForChild("Event", 9e9)
 
--- Settings
+--- Settings
 local HIT_DELAY = 0.1
 local STOMP_DELAY = 0.05
 local STOMP_REPEAT = 5
