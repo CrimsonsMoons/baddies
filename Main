@@ -4,7 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Remote = ReplicatedStorage:WaitForChild("Event", 9e9)
 
---- SETTINGS
+---- SETTINGS
 local MY_HP_TRIGGER = 1            -- ONLY RUN WHEN YOU ARE 1 HP
 local STOMP_HP_TRIGGER = 1         -- stomp when enemy is 1 HP or less
 local HIT_DELAY = 0.1
