@@ -1,47 +1,47 @@
---- =========================
--- 1 SLAY = 1 PREMIUM CRATE
+-- =========================
+-- EXECUTOR: PREMIUM CRATE MILESTONES
 -- =========================
 
-local player = game.Players.LocalPlayer
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+-- wait for attributes to exist
+repeat task.wait() until player:GetAttribute("Slays") ~= nil
+
+-- 🔢 milestones (edit freely)
+local Milestones = {
+    1, 2, 75, 100, 150, 200, 250, 300, 400, 500
+}
 
 local CRATE_NAME = "Premium"
 
--- Safe attribute getter
+-- safe getter
 local function getAttr(name)
-	return player:GetAttribute(name) or 0
+    return player:GetAttribute(name) or 0
 end
 
--- Give Premium crate (client-side)
+-- crate grant (client-side)
 local function giveCrate()
-	print("GOT PREMIUM CRATE")
+    print("[EXECUTOR] Premium crate granted")
 
-	-- 🔧 Hook your real crate logic here
-	-- Example:
-	-- game.ReplicatedStorage.Remotes.GiveCrate:FireServer(CRATE_NAME)
+    -- 🔧 if the game uses a remote, hook it here:
+    -- game.ReplicatedStorage.Remotes.GiveCrate:FireServer(CRATE_NAME)
 end
 
--- Track slays
-local lastSlays = getAttr("Slays")
+-- milestone checker
+local function checkMilestones()
+    local slays = getAttr("Slays")
+    local claimed = getAttr("CratesClaimed")
 
-local function onSlaysChanged()
-	local currentSlays = getAttr("Slays")
-	local gained = currentSlays - lastSlays
-
-	if gained > 0 then
-		for _ = 1, gained do
-			giveCrate()
-			player:SetAttribute(
-				"CratesClaimed",
-				getAttr("CratesClaimed") + 1
-			)
-		end
-	end
-
-	lastSlays = currentSlays
+    while Milestones[claimed + 1] and slays >= Milestones[claimed + 1] do
+        giveCrate()
+        player:SetAttribute("CratesClaimed", claimed + 1)
+        claimed += 1
+    end
 end
 
--- Listen for changes
-player:GetAttributeChangedSignal("Slays"):Connect(onSlaysChanged)
+-- listen for slay changes
+player:GetAttributeChangedSignal("Slays"):Connect(checkMilestones)
 
--- Initial check
-onSlaysChanged()
+-- initial run
+checkMilestones()
