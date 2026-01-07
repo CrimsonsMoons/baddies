@@ -1,81 +1,47 @@
 -- =========================
--- CRATE MILESTONE SCRIPT
+-- 1 SLAY = 1 PREMIUM CRATE
 -- =========================
 
--- Milestone data
-local Milestones = {
-	{ Slays = 25,  Crate = "Standard" },
-	{ Slays = 75,  Crate = "Premium" },
-	{ Slays = 100, Crate = "Standard" },
-	{ Slays = 125, Crate = "Standard" },
-	{ Slays = 225, Crate = "Cartoon" },
-	{ Slays = 250, Crate = "Standard" },
-	{ Slays = 300, Crate = "Premium" },
-	{ Slays = 325, Crate = "Standard" },
-	{ Slays = 425, Crate = "Witch" },
-}
+local player = game.Players.LocalPlayer
 
-local MilestoneCount = #Milestones
-local CycleLength = Milestones[MilestoneCount].Slays
+local CRATE_NAME = "Premium"
 
--- =========================
--- Utility
--- =========================
-
-local function getAttributeSafe(obj, name)
-	return obj:GetAttribute(name) or 0
+-- Safe attribute getter
+local function getAttr(name)
+	return player:GetAttribute(name) or 0
 end
 
--- =========================
--- Get Next Crate Info
--- =========================
+-- Give Premium crate (client-side)
+local function giveCrate()
+	print("GOT PREMIUM CRATE")
 
-local function getNextCrate(player)
-	local claimed = getAttributeSafe(player, "CratesClaimed")
-
-	local index = (claimed % MilestoneCount) + 1
-	local milestone = Milestones[index]
-
-	local cyclesCompleted = math.floor(claimed / MilestoneCount)
-	local requiredSlays = cyclesCompleted * CycleLength + milestone.Slays
-
-	return milestone.Crate, requiredSlays
-end
-
--- =========================
--- Grant Crate
--- =========================
-
-local function giveCrate(player, crateName)
-	print("Gave crate:", crateName, "to", player.Name)
-
-	-- 🔧 YOUR CRATE LOGIC HERE
+	-- 🔧 Hook your real crate logic here
 	-- Example:
-	-- player.Inventory.Crates[crateName].Value += 1
+	-- game.ReplicatedStorage.Remotes.GiveCrate:FireServer(CRATE_NAME)
 end
 
--- =========================
--- Check & Reward
--- =========================
+-- Track slays
+local lastSlays = getAttr("Slays")
 
-local function checkCrateRewards(player)
-	local slays = getAttributeSafe(player, "Slays")
+local function onSlaysChanged()
+	local currentSlays = getAttr("Slays")
+	local gained = currentSlays - lastSlays
 
-	while true do
-		local crate, requiredSlays = getNextCrate(player)
-
-		if slays < requiredSlays then
-			break
+	if gained > 0 then
+		for _ = 1, gained do
+			giveCrate()
+			player:SetAttribute(
+				"CratesClaimed",
+				getAttr("CratesClaimed") + 1
+			)
 		end
-
-		giveCrate(player, crate)
-		player:SetAttribute("CratesClaimed", getAttributeSafe(player, "CratesClaimed") + 1)
 	end
+
+	lastSlays = currentSlays
 end
 
--- =========================
--- Example Hook
--- =========================
--- Call this whenever slays change
+-- Listen for changes
+player:GetAttributeChangedSignal("Slays"):Connect(onSlaysChanged)
 
--- checkCrateRewards(player)
+-- Initial check
+onSlaysChanged()
